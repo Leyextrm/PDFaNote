@@ -54,3 +54,5 @@ To publish a new version to the Microsoft Store and GitHub:
 5. Package the MSIX from Visual Studio or CLI and upload it to the **Microsoft Store**.
 6. Ensure the Microsoft Store version always matches the corresponding GitHub tag.
 
+## Privacy Policy
+PDFaNote is a local desktop application. It does not collect, store, or transmit any personal data, telemetry, or user files to any external servers. All processing is done locally on your device.
