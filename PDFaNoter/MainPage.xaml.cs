@@ -25,8 +25,8 @@ namespace PDFaNoter
                     {
                         new TextBlock { Text = "PDFaNote", FontSize = 20 },
                         new TextBlock { Text = "License: AGPL-3.0-or-later" },
-                        new HyperlinkButton { Content = "Source code on GitHub", NavigateUri = new Uri("https://github.com/<GITHUB_USERNAME>/<REPOSITORY_NAME>") },
-                        new HyperlinkButton { Content = "Third-Party Notices", NavigateUri = new Uri("https://github.com/<GITHUB_USERNAME>/<REPOSITORY_NAME>/blob/main/THIRD_PARTY_NOTICES.md") },
+                        new HyperlinkButton { Content = "Source code on GitHub", NavigateUri = new Uri("https://github.com/Leyextrm/PDFaNote") },
+                        new HyperlinkButton { Content = "Third-Party Notices", NavigateUri = new Uri("https://github.com/Leyextrm/PDFaNote/blob/main/THIRD_PARTY_NOTICES.md") },
                         new TextBlock { Text = "This software uses iText 9.7.0 (AGPL-3.0), PdfPig, and other open-source libraries. For full details, please refer to the Third-Party Notices.", TextWrapping = TextWrapping.Wrap }
                     }
                 },
@@ -149,3 +149,4 @@ namespace PDFaNoter
         }
     }
 }
+

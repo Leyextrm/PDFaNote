@@ -1,4 +1,4 @@
-﻿# PDFaNote
+# PDFaNote
 
 PDFaNote is a Windows application for taking notes and making annotations on PDF documents.
 
@@ -14,7 +14,7 @@ For a complete list of third-party libraries and their licenses, please see [THI
 ## Source Code
 
 The public source code repository is located at:
-https://github.com/<GITHUB_USERNAME>/<REPOSITORY_NAME>
+https://github.com/Leyextrm/PDFaNote
 
 ## Development & Build Environment
 
@@ -53,3 +53,4 @@ To publish a new version to the Microsoft Store and GitHub:
 4. Create a **GitHub Release** for 1.0.0.
 5. Package the MSIX from Visual Studio or CLI and upload it to the **Microsoft Store**.
 6. Ensure the Microsoft Store version always matches the corresponding GitHub tag.
+
