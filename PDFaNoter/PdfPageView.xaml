@@ -1,0 +1,22 @@
+﻿<UserControl
+    x:Class="PDFaNoter.PdfPageView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:PDFaNoter"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d" Margin="0,0,0,10">
+
+    <Grid x:Name="PageContainer" HorizontalAlignment="Center" VerticalAlignment="Center" Background="White">
+        <!-- Adding a slight shadow to make pages distinct -->
+        <Grid.Shadow>
+            <ThemeShadow />
+        </Grid.Shadow>
+        <Image x:Name="PdfImage" Stretch="None" />
+        <Canvas x:Name="InkCanvas" Background="Transparent" 
+                PointerPressed="InkCanvas_PointerPressed" 
+                PointerMoved="InkCanvas_PointerMoved" 
+                PointerReleased="InkCanvas_PointerReleased" 
+                PointerCanceled="InkCanvas_PointerReleased" />
+    </Grid>
+</UserControl>

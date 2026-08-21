@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="PDFaNoter.MainPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:PDFaNoter">
+
+    <Grid x:Name="RootGrid" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <TabView x:Name="MainTabView" 
+                 VerticalAlignment="Stretch" HorizontalAlignment="Stretch" 
+                 AddTabButtonClick="MainTabView_AddTabButtonClick" 
+                 TabCloseRequested="MainTabView_TabCloseRequested">
+            <TabView.TabStripFooter>
+                <CommandBar DefaultLabelPosition="Right" Background="Transparent">
+                    <AppBarButton Icon="OpenFile" Label="Open" Click="BtnOpen_Click" />
+                    <AppBarButton Icon="Save" Label="Save" Click="BtnSave_Click" />
+                    <AppBarButton Icon="Help" Label="About" Click="BtnAbout_Click" />
+                </CommandBar>
+            </TabView.TabStripFooter>
+        </TabView>
+    </Grid>
+</Page>

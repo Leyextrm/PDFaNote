@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "PDFaNoter (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "PDFaNoter (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
