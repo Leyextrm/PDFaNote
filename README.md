@@ -36,23 +36,5 @@ https://github.com/Leyextrm/PDFaNote
    
    *Alternatively, you can open PDFaNoter/PDFaNoter.slnx in Visual Studio 2022 and build from the IDE.*
 
-## Release Procedure
-
-To publish a new version to the Microsoft Store and GitHub:
-
-1. Determine the new version number (e.g., 1.0.0). Update Package.appxmanifest version accordingly.
-2. Commit the changes.
-   `cmd
-   git commit -am "Bump version to 1.0.0"
-   `
-3. Create a Git tag for the release.
-   `cmd
-   git tag v1.0.0
-   git push origin main v1.0.0
-   `
-4. Create a **GitHub Release** for 1.0.0.
-5. Package the MSIX from Visual Studio or CLI and upload it to the **Microsoft Store**.
-6. Ensure the Microsoft Store version always matches the corresponding GitHub tag.
-
 ## Privacy Policy
 PDFaNote is a local desktop application. It does not collect, store, or transmit any personal data, telemetry, or user files to any external servers. All processing is done locally on your device.
