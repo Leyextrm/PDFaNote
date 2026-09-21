@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Microsoft.UI.Xaml.Shapes;
 using Microsoft.UI.Xaml.Controls;
 
@@ -97,6 +97,60 @@ namespace PDFaNoter
     }
 
     
+    public class MoveElementsCommand : IUndoableCommand
+    {
+        private List<Microsoft.UI.Xaml.UIElement> _elements;
+        private double _dx;
+        private double _dy;
+
+        public MoveElementsCommand(List<Microsoft.UI.Xaml.UIElement> elements, double dx, double dy)
+        {
+            _elements = new List<Microsoft.UI.Xaml.UIElement>(elements);
+            _dx = dx;
+            _dy = dy;
+        }
+
+        public void Undo()
+        {
+            foreach (var elem in _elements)
+            {
+                if (elem is Polyline poly)
+                {
+                    for (int i = 0; i < poly.Points.Count; i++)
+                    {
+                        var pt = poly.Points[i];
+                        poly.Points[i] = new Windows.Foundation.Point(pt.X - _dx, pt.Y - _dy);
+                    }
+                }
+                else if (elem is TextBox tb)
+                {
+                    Canvas.SetLeft(tb, Canvas.GetLeft(tb) - _dx);
+                    Canvas.SetTop(tb, Canvas.GetTop(tb) - _dy);
+                }
+            }
+        }
+
+        public void Redo()
+        {
+            foreach (var elem in _elements)
+            {
+                if (elem is Polyline poly)
+                {
+                    for (int i = 0; i < poly.Points.Count; i++)
+                    {
+                        var pt = poly.Points[i];
+                        poly.Points[i] = new Windows.Foundation.Point(pt.X + _dx, pt.Y + _dy);
+                    }
+                }
+                else if (elem is TextBox tb)
+                {
+                    Canvas.SetLeft(tb, Canvas.GetLeft(tb) + _dx);
+                    Canvas.SetTop(tb, Canvas.GetTop(tb) + _dy);
+                }
+            }
+        }
+    }
+
     public class MacroCommand : IUndoableCommand
     {
         private List<IUndoableCommand> _commands;

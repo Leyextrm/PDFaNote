@@ -1,0 +1,234 @@
+Created At: 2026-09-11T09:30:31+09:00
+Completed At: 2026-09-11T09:30:31+09:00
+File Path: `file:///d:/OneDrive/Storage/General/Programming/PDFaNoter/PDFaNoter/MainPage.xaml.cs`
+Total Lines: 226
+Total Bytes: 8727
+Showing lines 1 to 226
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: using Microsoft.UI.Xaml;
+2: using Microsoft.UI.Xaml.Controls;
+3: using System;
+4: using System.Threading.Tasks;
+5: using System.Collections.Generic;
+6: using System.IO;
+7: 
+8: namespace PDFaNoter
+9: {
+10:     public sealed partial class MainPage : Page
+11:     {
+12:         public MainPage()
+13:         {
+14:             this.InitializeComponent();
+15:         }
+16: 
+17:         private async void BtnAbout_Click(object sender, RoutedEventArgs e)
+18:         {
+19:             var dialog = new ContentDialog
+20:             {
+21:                 Title = "About PDFaNote",
+22:                 Content = new StackPanel
+23:                 {
+24:                     Spacing = 10,
+25:                     Children =
+26:                     {
+27:                         new TextBlock { Text = "PDFaNote", FontSize = 20 },
+28:                         new TextBlock { Text = "License: AGPL-3.0-or-later" },
+29:                         new HyperlinkButton { Content = "Source code on GitHub", NavigateUri = new Uri("https://github.com/Leyextrm/PDFaNote") },
+30:                         new HyperlinkButton { Content = "Third-Party Notices", NavigateUri = new Uri("https://github.com/Leyextrm/PDFaNote/blob/main/THIRD_PARTY_NOTICES.md") },
+31:                         new TextBlock { Text = "This software uses iText 9.7.0 (AGPL-3.0), PdfPig, and other open-source libraries. For full details, please refer to the Third-Party Notices.", TextWrapping = TextWrapping.Wrap }
+32:                     }
+33:                 },
+34:                 CloseButtonText = "OK",
+35:                 XamlRoot = this.XamlRoot
+36:             };
+37:             await dialog.ShowAsync();
+38:         }
+39: 
+40:         private async void BtnNewNote_Click(object sender, RoutedEventArgs e)
+41:         {
+42:             var picker = new Windows.Storage.Pickers.FileSavePicker();
+43:             var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow);
+44:             WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+45:             picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
+46:             picker.FileTypeChoices.Add("PDF Document", new System.Collections.Generic.List<string>() { ".pdf" });
+47:             picker.SuggestedFileName = "New Note";
+48: 
+49:             var file = await picker.PickSaveFileAsync();
+50:             if (file != null)
+51:             {
+52:                 using (var stream = await file.OpenStreamForWriteAsync())
+53:                 {
+54:                     stream.SetLength(0);
+55:                     var writer = new iText.Kernel.Pdf.PdfWriter(stream);
+56:                     var pdf = new iText.Kernel.Pdf.PdfDocument(writer);
+57:                     pdf.AddNewPage(iText.Kernel.Geom.PageSize.A4);
+58:                     pdf.Close();
+59:                 }
+60: 
+61:                 var docView = new PdfDocumentView();
+62:                 await docView.LoadPdfAsync(file);
+63: 
+64:                 var newTab = new TabViewItem
+65:                 {
+66:                     Header = file.Name,
+67:                     Content = docView
+68:                 };
+69:                 MainTabView.TabItems.Add(newTab);
+70:                 MainTabView.SelectedItem = newTab;
+71:             }
+72:         }
+73: 
+74:         public async System.Threading.Tasks.Task OpenFileAsync(Windows.Storage.StorageFile file)
+75:         {
+76:             var docView = new PdfDocumentView();
+77:             await docView.LoadPdfAsync(file);
+78: 
+79:             var newTab = new TabViewItem
+80:             {
+81:                 Header = file.Name,
+82:                 Content = docView
+83:             };
+84:             MainTabView.TabItems.Add(newTab);
+85:             MainTabView.SelectedItem = newTab;
+86:         }
+87: 
+88:         private async void BtnOpen_Click(object sender, RoutedEventArgs e)
+89:         {
+90:             var picker = new Windows.Storage.Pickers.FileOpenPicker();
+91:             var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow);
+92:             WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+93:             picker.FileTypeFilter.Add(".pdf");
+94: 
+95:             var file = await picker.PickSingleFileAsync();
+96:             if (file != null)
+97:             {
+98:                 await OpenFileAsync(file);
+99:             }
+100:         }
+101: 
+102:         private async void BtnSave_Click(object sender, RoutedEventArgs e)
+103:         {
+104:             if (MainTabView.SelectedItem is TabViewItem tab && tab.Content is PdfDocumentView docView)
+105:             {
+106:                 if (docView.SourceFile != null)
+107:                 {
+108:                     await docView.SaveAsync(docView.SourceFile);
+109:                     ShowSaveNotification();
+110:                 }
+111:                 else
+112:                 {
+113:                     BtnSaveAs_Click(sender, e);
+114:                 }
+115:             }
+116:         }
+117: 
+118:         private async void BtnSaveAs_Click(object sender, RoutedEventArgs e)
+119:         {
+120:             if (MainTabView.SelectedItem is TabViewItem tab && tab.Content is PdfDocumentView docView)
+121:             {
+122:                 var picker = new Windows.Storage.Pickers.FileSavePicker();
+123:                 var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow);
+124:                 WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+125:                 picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
+126:                 picker.FileTypeChoices.Add("PDF Document", new System.Collections.Generic.List<string>() { ".pdf" });
+127:                 picker.SuggestedFileName = docView.SourceFile?.Name ?? "New Note.pdf";
+128: 
+129:                 var file = await picker.PickSaveFileAsync();
+130:                 if (file != null)
+131:                 {
+132:                     await docView.SaveAsync(file, updateSourceFile: true);
+133:                     tab.Header = file.Name;
+134:                     ShowSaveNotification();
+135:                 }
+136:             }
+137:         }
+138: 
+139:         private async void ShowSaveNotification()
+140:         {
+141:             SaveNotification.IsOpen = true;
+142:             await Task.Delay(3000);
+143:             SaveNotification.IsOpen = false;
+144:         }
+145: 
+146:         private void MainTabView_AddTabButtonClick(TabView sender, object args)
+147:         {
+148:             BtnOpen_Click(this, null);
+149:         }
+150: 
+151:         private async void MainTabView_TabCloseRequested(TabView sender, TabViewTabCloseRequestedEventArgs args)
+152:         {
+153:             if (args.Tab.Content is PdfDocumentView docView && docView.History.HasUnsavedChanges)
+154:             {
+155:                 var dialog = new ContentDialog
+156:                 {
+157:                     Title = "Unsaved Changes",
+158:                     Content = "Do you want to save your changes to " + args.Tab.Header + "?",
+159:                     PrimaryButtonText = "Save",
+160:                     SecondaryButtonText = "Don't Save",
+161:                     CloseButtonText = "Cancel",
+162:                     XamlRoot = this.XamlRoot
+163:                 };
+164: 
+165:                 var result = await dialog.ShowAsync();
+166:                 if (result == ContentDialogResult.Primary)
+167:                 {
+168:                     await docView.SaveAsync(docView.SourceFile);
+169:                     sender.TabItems.Remove(args.Tab);
+170:                 }
+171:                 else if (result == ContentDialogResult.Secondary)
+172:                 {
+173:                     sender.TabItems.Remove(args.Tab);
+174:                 }
+175:             }
+176:             else
+177:             {
+178:                 sender.TabItems.Remove(args.Tab);
+179:             }
+180:         }
+181: 
+182:         public bool HasUnsavedChanges()
+183:         {
+184:             foreach (TabViewItem tab in MainTabView.TabItems)
+185:             {
+186:                 if (tab.Content is PdfDocumentView docView && docView.History.HasUnsavedChanges)
+187:                 {
+188:                     return true;
+189:                 }
+190:             }
+191:             return false;
+192:         }
+193: 
+194:         public async Task PromptSaveAndCloseAsync()
+195:         {
+196:             foreach (TabViewItem tab in new List<object>(MainTabView.TabItems))
+197:             {
+198:                 if (tab.Content is PdfDocumentView docView && docView.History.HasUnsavedChanges)
+199:                 {
+200:                     MainTabView.SelectedItem = tab;
+201:                     var dialog = new ContentDialog
+202:                     {
+203:                         Title = "Unsaved Changes",
+204:                         Content = "Do you want to save your changes to " + tab.Header + "?",
+205:                         PrimaryButtonText = "Save",
+206:                         SecondaryButtonText = "Don't Save",
+207:                         CloseButtonText = "Cancel",
+208:                         XamlRoot = this.XamlRoot
+209:                     };
+210:                     var result = await dialog.ShowAsync();
+211:                     if (result == ContentDialogResult.Primary)
+212:                     {
+213:                         await docView.SaveAsync(docView.SourceFile);
+214:                     }
+215:                     else if (result == ContentDialogResult.None)
+216:                     {
+217:                         return; // Cancelled
+218:                     }
+219:                 }
+220:             }
+221:             App.MainWindow.Close();
+222:         }
+223:     }
+224: }
+225: 
+226: 
+The above content shows the entire, complete file contents of the requested file.

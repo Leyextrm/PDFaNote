@@ -1,0 +1,791 @@
+Created At: 2026-09-11T09:28:32+09:00
+Completed At: 2026-09-11T09:28:32+09:00
+File Path: `file:///d:/OneDrive/Storage/General/Programming/PDFaNoter/PDFaNoter/PdfDocumentView.xaml.cs`
+Total Lines: 783
+Total Bytes: 40969
+Showing lines 1 to 783
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: using Microsoft.UI.Xaml;
+2: using Microsoft.UI.Xaml.Controls;
+3: using Microsoft.UI.Xaml.Media;
+4: using System.Collections.Generic;
+5: using System.Collections.ObjectModel;
+6: using Windows.Data.Pdf;
+7: using System.Threading.Tasks;
+8: using Microsoft.UI.Xaml.Controls.Primitives;
+9: using System.IO;
+10: using System;
+11: 
+12: namespace PDFaNoter
+13: {
+14:     public sealed partial class PdfDocumentView : UserControl
+15:     {
+16:         private Windows.Storage.StorageFile _sourceFile;
+17:         public Windows.Storage.StorageFile SourceFile => _sourceFile;
+18:         private Windows.Storage.StorageFile _workingFile;
+19:         private PdfDocument _pdfDocument;
+20:         private ObservableCollection<PdfPageView> _pages = new ObservableCollection<PdfPageView>();
+21:         public CommandHistory History { get; private set; } = new CommandHistory();
+22:         
+23:         private List<ToggleButton> _penButtons;
+24:         private List<ToggleButton> _highlighterButtons;
+25: 
+26:         public PdfDocumentView()
+27:         {
+28:             this.InitializeComponent();
+29:             PdfPagesControl.ItemsSource = _pages;
+30:             
+31:             _penButtons = new List<ToggleButton> { BtnPen0, BtnPen1, BtnPen2, BtnPen3, BtnPen4 };
+32:             _highlighterButtons = new List<ToggleButton> { BtnHighlighter0, BtnHighlighter1, BtnHighlighter2 };
+33:             
+34:             IndPen0.Background = ToolState.PenColors[0];
+35:             IndPen1.Background = ToolState.PenColors[1];
+36:             IndPen2.Background = ToolState.PenColors[2];
+37:             IndPen3.Background = ToolState.PenColors[3];
+38:             IndPen4.Background = ToolState.PenColors[4];
+39: 
+40:             IndHighlighter0.Background = ToolState.HighlighterColors[0];
+41:             IndHighlighter1.Background = ToolState.HighlighterColors[1];
+42:             IndHighlighter2.Background = ToolState.HighlighterColors[2];
+43: 
+44:             IndText.Background = ToolState.TextColor;
+45:             IndTextHighlighter.Background = ToolState.TextHighlighterColor;
+46:             TextHighlighterColorPicker.Color = ToolState.TextHighlighterColor.Color;
+47:             TextFontFamilyCombo.ItemsSource = ToolState.SupportedFonts;
+48:             TextFontFamilyCombo.SelectedItem = ToolState.TextFontFamily;
+49: 
+50:             ApplyToolbarDockPosition(ToolState.ToolbarDockPosition);
+51:             ApplyScrollMode(ToolState.ScrollMode);
+52: 
+53:             UpdateToolSelection();
+54:         }
+55: 
+56:         public async Task LoadPdfAsync(Windows.Storage.StorageFile file, bool isReload = false)
+57:         {
+58:             if (!isReload) {
+59:                 _sourceFile = file;
+60:                 _workingFile = file;
+61:             } else {
+62:                 _workingFile = file;
+63:             }
+64:             var extractedStrokesDict = new System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<ExtractedStroke>>();
+65:             var pigWordsDict = new System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<PdfTextWord>>();
+66:             
+67:             try {
+68:                 using (var pigStream = await file.OpenReadAsync()) {
+69:                     var pigDotNetStream = pigStream.AsStreamForRead();
+70:                     using (var pigDoc = UglyToad.PdfPig.PdfDocument.Open(pigDotNetStream, new UglyToad.PdfPig.ParsingOptions { UseLenientParsing = true })) {
+71:                         for (int i = 1; i <= pigDoc.NumberOfPages; i++) {
+72:                             var page = pigDoc.GetPage(i);
+73:                             var words = new System.Collections.Generic.List<PdfTextWord>();
+74:                             foreach (var letter in page.Letters) {
+75:                                 words.Add(new PdfTextWord { Text = letter.Value, Bounds = new Windows.Foundation.Rect(letter.BoundingBox.Left, letter.BoundingBox.Bottom, letter.BoundingBox.Width, letter.BoundingBox.Height) });
+76:                             }
+77:                             pigWordsDict[i - 1] = words;
+78:                         }
+79:                     }
+80:                 }
+81:             } catch { }
+82: 
+83:             var memStream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+84:             
+85:             using (var stream = await file.OpenReadAsync())
+86:             {
+87:                 var dotNetStream = stream.AsStreamForRead();
+88:                 var reader = new iText.Kernel.Pdf.PdfReader(dotNetStream);
+89:                 var ms = new System.IO.MemoryStream();
+90:                 var writer = new iText.Kernel.Pdf.PdfWriter(ms); writer.SetCloseStream(false);
+91:                 var pdfDoc = new iText.Kernel.Pdf.PdfDocument(reader, writer);
+92:                 
+93:                 for (int i = 1; i <= pdfDoc.GetNumberOfPages(); i++)
+94:                 {
+95:                     var page = pdfDoc.GetPage(i);
+96:                     var annots = page.GetAnnotations();
+97:                     var extractedStrokes = new System.Collections.Generic.List<ExtractedStroke>();
+98:                     var annotsToRemove = new System.Collections.Generic.List<iText.Kernel.Pdf.Annot.PdfAnnotation>();
+99:                     
+100:                     var cropBox = page.GetCropBox();
+101:                     int rotation = page.GetRotation();
+102:                     float cropW = cropBox.GetWidth();
+103:                     float cropH = cropBox.GetHeight();
+104:                     
+105:                     if (annots != null)
+106:                     {
+107:                         foreach (var annot in annots)
+108:                         {
+109:                             var pdfObject = annot.GetPdfObject();
+110:                             var inkList = pdfObject.GetAsArray(iText.Kernel.Pdf.PdfName.InkList);
+111:                             var customColor = pdfObject.GetAsArray(new iText.Kernel.Pdf.PdfName("PDFaNoterColor"));
+112:                             var customThickness = pdfObject.GetAsNumber(new iText.Kernel.Pdf.PdfName("PDFaNoterThickness"));
+113:                             
+114:                             if (inkList != null && customColor != null && customThickness != null)
+115:                             {
+116:                                 var extracted = new ExtractedStroke();
+117:                                 extracted.Thickness = customThickness.GetValue() / 0.75f;
+118:                                 extracted.Color = Windows.UI.Color.FromArgb(
+119:                                     (byte)(customColor.GetAsNumber(3).GetValue() * 255),
+120:                                     (byte)(customColor.GetAsNumber(0).GetValue() * 255),
+121:                                     (byte)(customColor.GetAsNumber(1).GetValue() * 255),
+122:                                     (byte)(customColor.GetAsNumber(2).GetValue() * 255)
+123:                                 );
+124:                                 
+125:                                 for (int j = 0; j < inkList.Size(); j++)
+126:                                 {
+127:                                     var strokeArray = inkList.GetAsArray(j);
+128:                                     if (strokeArray == null) continue;
+129:                                     
+130:                                     for (int k = 0; k < strokeArray.Size(); k += 2)
+131:                                     {
+132:                                         float px = strokeArray.GetAsNumber(k).FloatValue();
+133:                                         float py = strokeArray.GetAsNumber(k + 1).FloatValue();
+134:                                         
+135:                                         px -= cropBox.GetLeft();
+136:                                         py -= cropBox.GetBottom();
+137:                                         float vx = 0, vy = 0;
+138:                                         
+139:                                         if (rotation == 0) {
+140:                                             vx = px; vy = cropH - py;
+141:                                         } else if (rotation == 90) {
+142:                                             vx = py; vy = px;
+143:                                         } else if (rotation == 180) {
+144:                                             vx = cropW - px; vy = py;
+145:                                         } else if (rotation == 270) {
+146:                                             vx = cropH - py; vy = cropW - px;
+147:                                         }
+148:                                         
+149:                                         extracted.Points.Add(new Windows.Foundation.Point(vx * 2.0 / 0.75f, vy * 2.0 / 0.75f));
+150:                                     }
+151:                                 }
+152:                                 extractedStrokes.Add(extracted);
+153:                                 annotsToRemove.Add(annot);
+154:                             }
+155:                         }
+156:                         
+157:                         foreach (var annot in annotsToRemove)
+158:                         {
+159:                             page.RemoveAnnotation(annot);
+160:                         }
+161:                     }
+162:                     extractedStrokesDict[i - 1] = extractedStrokes;
+163:                 }
+164:                 
+165:                 pdfDoc.Close();
+166:                 
+167:                 ms.Position = 0;
+168:                 var randomAccessStream = ms.AsRandomAccessStream();
+169:                 await Windows.Storage.Streams.RandomAccessStream.CopyAsync(randomAccessStream, memStream);
+170:             }
+171:             
+172:             _pdfDocument = await Windows.Data.Pdf.PdfDocument.LoadFromStreamAsync(memStream);
+173:             _pages.Clear();
+174:             if (_pdfDocument == null) return;
+175: 
+176:             for (uint i = 0; i < _pdfDocument.PageCount; i++)
+177:             {
+178:                 var pageData = new PdfPageData { PageIndex = i, Document = _pdfDocument };
+179:                 if (extractedStrokesDict.ContainsKey((int)i))
+180:                 {
+181:                     pageData.ExtractedStrokes = extractedStrokesDict[(int)i];
+182:                 }
+183:                 if (pigWordsDict.ContainsKey((int)i))
+184:                 {
+185:                     pageData.Words = pigWordsDict[(int)i];
+186:                 }
+187:                 var pageView = new PdfPageView();
+188:                 pageView.InsertPageRequested += PageView_InsertPageRequested;
+189:                 pageView.DeletePageRequested += PageView_DeletePageRequested;
+190:                 pageView.LoadPage(pageData, History);
+191:                 _pages.Add(pageView);
+192:                 await Task.Delay(10);
+193:             }
+194:         }
+195: 
+196:         public async Task SaveAsync(Windows.Storage.StorageFile destFile, bool updateSourceFile = true)
+197:         {
+198:             if (_workingFile == null) return;
+199:             
+200:             bool isSameFile = false;
+201:             if (_sourceFile != null && destFile.Path == _sourceFile.Path) isSameFile = true;
+202:             if (destFile.Path == _workingFile.Path) isSameFile = true;
+203: 
+204:             Windows.Storage.StorageFile actualDestFile = destFile;
+205:             
+206:             if (isSameFile)
+207:             {
+208:                 actualDestFile = await Windows.Storage.ApplicationData.Current.TemporaryFolder.CreateFileAsync("temp_save.pdf", Windows.Storage.CreationCollisionOption.GenerateUniqueName);
+209:             }
+210: 
+211:             using (var sourceStream = await _workingFile.OpenStreamForReadAsync())
+212:             using (var destStream = await actualDestFile.OpenStreamForWriteAsync())
+213:             {
+214:                 var pdfReader = new iText.Kernel.Pdf.PdfReader(sourceStream);
+215:                 var pdfWriter = new iText.Kernel.Pdf.PdfWriter(destStream);
+216:                 var pdfDoc = new iText.Kernel.Pdf.PdfDocument(pdfReader, pdfWriter);
+217:                 
+218:                 for (int i = 0; i < _pages.Count; i++)
+219:                 {
+220:                     var pageView = _pages[i];
+221:                     var pageData = pageView.PageData;
+222:                     if (pageData == null) continue;
+223:                     
+224:                     var pdfPage = pdfDoc.GetPage(i + 1);
+225:                     var pageSize = pdfPage.GetPageSize();
+226:                     foreach (var stroke in pageData.Strokes)
+227:                     {
+228:                         if (stroke.Points.Count < 2) continue;
+229:                         
+230:                         var color = (stroke.Stroke as SolidColorBrush).Color;
+231:                         var pdfColor = new iText.Kernel.Colors.DeviceRgb(color.R, color.G, color.B);
+232:                         
+233:                                                 float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+234:                         var inkList = new iText.Kernel.Pdf.PdfArray();
+235:                         var strokeArray = new iText.Kernel.Pdf.PdfArray();
+236:                         
+237:                         var cropBox = pdfPage.GetCropBox();
+238:                         int rotation = pdfPage.GetRotation();
+239:                         float cropW = cropBox.GetWidth();
+240:                         float cropH = cropBox.GetHeight();
+241: 
+242:                         var smoothedPoints = GetSmoothedPoints(stroke.Points);
+243: 
+244:                         foreach (var pt in smoothedPoints)
+245:                         {
+246:                             float vx = (float)(pt.X / 2.0) * 0.75f;
+247:                             float vy = (float)(pt.Y / 2.0) * 0.75f;
+248:                             float px = 0, py = 0;
+249:                             
+250:                             if (rotation == 0) {
+251:                                 px = vx; py = cropH - vy;
+252:                             } else if (rotation == 90) {
+253:                                 px = vy; py = vx;
+254:                             } else if (rotation == 180) {
+255:                                 px = cropW - vx; py = vy;
+256:                             } else if (rotation == 270) {
+257:                                 px = cropW - vy; py = cropH - vx;
+258:                             }
+259:                             
+260:                             px += cropBox.GetLeft();
+261:                             py += cropBox.GetBottom();
+262:                             
+263:                             strokeArray.Add(new iText.Kernel.Pdf.PdfNumber(px));
+264:                             strokeArray.Add(new iText.Kernel.Pdf.PdfNumber(py));
+265:                             
+266:                             if (px < minX) minX = px;
+267:                             if (px > maxX) maxX = px;
+268:                             if (py < minY) minY = py;
+269:                             if (py > maxY) maxY = py;
+270:                         }
+271:                         inkList.Add(strokeArray);
+272:                         
+273:                         float padding = (float)(stroke.StrokeThickness / 2.0) + 2f;
+274:                         minX -= padding; minY -= padding; maxX += padding; maxY += padding;
+275:                         var rect = new iText.Kernel.Geom.Rectangle(minX, minY, maxX - minX, maxY - minY);
+276:                         
+277:                         var annot = new iText.Kernel.Pdf.Annot.PdfInkAnnotation(rect);
+278:                         annot.SetFlags(iText.Kernel.Pdf.Annot.PdfAnnotation.PRINT);
+279:                         
+280:                         annot.Put(iText.Kernel.Pdf.PdfName.InkList, inkList);
+281:                         annot.Put(new iText.Kernel.Pdf.PdfName("PDFaNoterThickness"), new iText.Kernel.Pdf.PdfNumber(stroke.StrokeThickness * 0.75f));
+282:                         annot.Put(new iText.Kernel.Pdf.PdfName("PDFaNoterColor"), new iText.Kernel.Pdf.PdfArray(new float[] { color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f }));
+283:                         
+284:                         var appearance = new iText.Kernel.Pdf.Xobject.PdfFormXObject(rect);
+285:                         var canvas = new iText.Kernel.Pdf.Canvas.PdfCanvas(appearance, pdfDoc);
+286:                         
+287:                         canvas.SetStrokeColor(pdfColor);
+288:                         canvas.SetLineWidth((float)(stroke.StrokeThickness / 2.0 * 0.75f));
+289:                         canvas.SetLineJoinStyle(iText.Kernel.Pdf.Canvas.PdfCanvasConstants.LineJoinStyle.ROUND);
+290:                         
+291:                         if (stroke.StrokeStartLineCap == PenLineCap.Square || stroke.StrokeStartLineCap == PenLineCap.Flat)
+292:                         {
+293:                             canvas.SetLineCapStyle(iText.Kernel.Pdf.Canvas.PdfCanvasConstants.LineCapStyle.BUTT);
+294:                         }
+295:                         else
+296:                         {
+297:                             canvas.SetLineCapStyle(iText.Kernel.Pdf.Canvas.PdfCanvasConstants.LineCapStyle.ROUND);
+298:                         }
+299:                         
+300:                         var gs = new iText.Kernel.Pdf.Extgstate.PdfExtGState();
+301:                         gs.SetStrokeOpacity((float)(color.A / 255.0));
+302:                         if (color.A < 255)
+303:                         {
+304:                             gs.SetBlendMode(iText.Kernel.Pdf.Extgstate.PdfExtGState.BM_MULTIPLY);
+305:                         }
+306:                         canvas.SetExtGState(gs);
+307:                         
+308:                         bool first = true;
+309:                         for (int j = 0; j < strokeArray.Size(); j += 2)
+310:                         {
+311:                             float px = strokeArray.GetAsNumber(j).FloatValue();
+312:                             float py = strokeArray.GetAsNumber(j + 1).FloatValue();
+313:                             
+314:                             if (first) { canvas.MoveTo(px, py); first = false; }
+315:                             else { canvas.LineTo(px, py); }
+316:                         }
+317:                         canvas.Stroke();
+318:                         
+319:                         annot.SetNormalAppearance(appearance.GetPdfObject());
+320:                         pdfPage.AddAnnotation(annot);
+321:                     }
+322: 
+323:                     foreach (var tb in pageData.Texts)
+324:                     {
+325:                         if (string.IsNullOrWhiteSpace(tb.Text)) continue;
+326:                         
+327:                         var color = (tb.Foreground as SolidColorBrush).Color;
+328:                         var pdfColor = new iText.Kernel.Colors.DeviceRgb(color.R, color.G, color.B);
+329:                         
+330:                         double x = Canvas.GetLeft(tb);
+331:                         double y = Canvas.GetTop(tb);
+332:                         double w = tb.ActualWidth > 0 ? tb.ActualWidth : tb.Width;
+333:                         double h = tb.ActualHeight > 0 ? tb.ActualHeight : (tb.MinHeight > 0 ? tb.MinHeight : 40);
+334:                         if (double.IsNaN(w)) w = 200;
+335:                         if (double.IsNaN(h)) h = 40;
+336:                         
+337:                         var fontPath = ToolState.GetFontPath(tb.FontFamily.Source);
+338:                         iText.Kernel.Font.PdfFont font = null;
+339:                         try {
+340:                             font = iText.Kernel.Font.PdfFontFactory.CreateFont(fontPath, iText.IO.Font.PdfEncodings.IDENTITY_H);
+341:                         } catch {
+342:                             // Fallback if the font file is invalid or unsupported by iText
+343:                             try {
+344:                                 font = iText.Kernel.Font.PdfFontFactory.CreateFont("c:\\windows\\fonts\\malgun.ttf", iText.IO.Font.PdfEncodings.IDENTITY_H);
+345:                             } catch {
+346:                                 font = iText.Kernel.Font.PdfFontFactory.CreateFont(iText.IO.Font.Constants.StandardFonts.HELVETICA);
+347:                             }
+348:                         }
+349:                         
+350:                         float fontSize = (float)(tb.FontSize / 2.0) * 0.75f;
+351:                         string[] lines = tb.Text.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+352:                         
+353:                         float maxTextWidth = 0;
+354:                         foreach(var line in lines) {
+355:                             float lw = font.GetWidth(line, fontSize);
+356:                             if (lw > maxTextWidth) maxTextWidth = lw;
+357:                         }
+358:                         
+359:                         float cropW = pdfPage.GetCropBox().GetWidth();
+360:                         float cropH = pdfPage.GetCropBox().GetHeight();
+361:                         
+362:                         float vx = (float)(x / 2.0) * 0.75f;
+363:                         float vy = (float)(y / 2.0) * 0.75f;
+364:                         float vw = Math.Max((float)(w / 2.0) * 0.75f, maxTextWidth + 20f);
+365:                         float textVH = (lines.Length * fontSize * 1.2f) + fontSize;
+366:                         float vh = Math.Max((float)(h / 2.0) * 0.75f, textVH + 20f);
+367:                         
+368:                         float minX = 0, minY = 0, maxX = 0, maxY = 0;
+369:                         int rotation = pdfPage.GetRotation();
+370:                         
+371:                         if (rotation == 0) {
+372:                             minX = vx; maxY = cropH - vy;
+373:                             maxX = vx + vw; minY = cropH - (vy + vh);
+374:                         } else if (rotation == 90) {
+375:                             minX = vy; maxY = vx + vw;
+376:                             maxX = vy + vh; minY = vx;
+377:                         } else if (rotation == 180) {
+378:                             minX = cropW - (vx + vw); maxY = vy + vh;
+379:                             maxX = cropW - vx; minY = vy;
+380:                         } else if (rotation == 270) {
+381:                             minX = cropW - (vy + vh); maxY = cropH - vx;
+382:                             maxX = cropW - vy; minY = cropH - (vx + vw);
+383:                         }
+384:                         
+385:                         var cropBox = pdfPage.GetCropBox();
+386:                         minX += cropBox.GetLeft();
+387:                         maxX += cropBox.GetLeft();
+388:                         minY += cropBox.GetBottom();
+389:                         maxY += cropBox.GetBottom();
+390:                         
+391:                         var rect = new iText.Kernel.Geom.Rectangle(minX, minY, maxX - minX, maxY - minY);
+392:                         var annot = new iText.Kernel.Pdf.Annot.PdfFreeTextAnnotation(rect, new iText.Kernel.Pdf.PdfString(tb.Text));
+393:                         annot.SetFlags(iText.Kernel.Pdf.Annot.PdfAnnotation.PRINT);
+394:                         
+395:                         var appearance = new iText.Kernel.Pdf.Xobject.PdfFormXObject(rect);
+396:                         var canvas = new iText.Kernel.Pdf.Canvas.PdfCanvas(appearance, pdfDoc);
+397:                         
+398:                         canvas.BeginText();
+399:                         canvas.SetFontAndSize(font, fontSize);
+400:                         canvas.SetFillColor(pdfColor);
+401:                         
+402:                         for (int l = 0; l < lines.Length; l++)
+403:                         {
+404:                             float linePy = maxY - fontSize - 5 - (l * fontSize * 1.2f);
+405:                             if (rotation == 0)
+406:                                 canvas.SetTextMatrix(1, 0, 0, 1, minX + 5, linePy);
+407:                             else if (rotation == 90)
+408:                                 canvas.SetTextMatrix(0, -1, 1, 0, minX + 5 + (l * fontSize * 1.2f) + fontSize, maxY - 5);
+409:                             else if (rotation == 180)
+410:                                 canvas.SetTextMatrix(-1, 0, 0, -1, maxX - 5, minY + 5 + (l * fontSize * 1.2f) + fontSize);
+411:                             else if (rotation == 270)
+412:                                 canvas.SetTextMatrix(0, 1, -1, 0, maxX - 5 - (l * fontSize * 1.2f) - fontSize, minY + 5);
+413:                                 
+414:                             canvas.ShowText(lines[l]);
+415:                         }
+416:                         canvas.EndText();
+417:                         
+418:                         annot.SetNormalAppearance(appearance.GetPdfObject());
+419:                         annot.Put(new iText.Kernel.Pdf.PdfName("PDFaNoterText"), iText.Kernel.Pdf.PdfBoolean.TRUE);
+420:                         
+421:                         pdfPage.AddAnnotation(annot);
+422:                     }
+423:                 }
+424:                 pdfDoc.Close();
+425:             }
+426:             
+427:             if (isSameFile)
+428:             {
+429:                 await actualDestFile.MoveAndReplaceAsync(destFile);
+430:             }
+431:             
+432:             if (updateSourceFile)
+433:             {
+434:                 _sourceFile = destFile;
+435:                 History.HasUnsavedChanges = false;
+436:             }
+437:             _workingFile = destFile;
+438:         }
+439: 
+440:         private void BtnUndo_Click(object sender, RoutedEventArgs e) => History.Undo();
+441:         private void BtnRedo_Click(object sender, RoutedEventArgs e) => History.Redo();
+442: 
+443:         private void UncheckAllExcept(ToggleButton activeBtn)
+444:         {
+445:             foreach (var btn in _penButtons) if (btn != activeBtn) btn.IsChecked = false;
+446:             foreach (var btn in _highlighterButtons) if (btn != activeBtn) btn.IsChecked = false;
+447:             if (BtnEraser != activeBtn) BtnEraser.IsChecked = false;
+448:             if (BtnText != activeBtn) BtnText.IsChecked = false;
+449:             if (BtnTextHighlighter != activeBtn) BtnTextHighlighter.IsChecked = false;
+450:             if (BtnLasso != activeBtn) BtnLasso.IsChecked = false;
+451:         }
+452: 
+453:         private void Pen_Click(object sender, RoutedEventArgs e)
+454:         {
+455:             var btn = (ToggleButton)sender;
+456:             int index = int.Parse(btn.Tag.ToString());
+457:             if (ToolState.CurrentMode == ToolMode.Pen && ToolState.CurrentPenSlot == index) { btn.IsChecked = true; btn.ContextFlyout?.ShowAt(btn); }
+458:             else { UncheckAllExcept(btn); btn.IsChecked = true; ToolState.CurrentMode = ToolMode.Pen; ToolState.CurrentPenSlot = index; UpdateToolSelection(); }
+459:         }
+460: 
+461:         private void Highlighter_Click(object sender, RoutedEventArgs e)
+462:         {
+463:             var btn = (ToggleButton)sender;
+464:             int index = int.Parse(btn.Tag.ToString());
+465:             if (ToolState.CurrentMode == ToolMode.Highlighter && ToolState.CurrentHighlighterSlot == index) { btn.IsChecked = true; btn.ContextFlyout?.ShowAt(btn); }
+466:             else { UncheckAllExcept(btn); btn.IsChecked = true; ToolState.CurrentMode = ToolMode.Highlighter; ToolState.CurrentHighlighterSlot = index; UpdateToolSelection(); }
+467:         }
+468: 
+469:         private void Eraser_Click(object sender, RoutedEventArgs e)
+470:         {
+471:             var btn = (ToggleButton)sender;
+472:             if (ToolState.CurrentMode == ToolMode.Eraser) { btn.IsChecked = true; btn.ContextFlyout?.ShowAt(btn); }
+473:             else { UncheckAllExcept(btn); btn.IsChecked = true; ToolState.CurrentMode = ToolMode.Eraser; UpdateToolSelection(); }
+474:         }
+475: 
+476:         private void Text_Click(object sender, RoutedEventArgs e)
+477:         {
+478:             var btn = (ToggleButton)sender;
+479:             if (ToolState.CurrentMode == ToolMode.Text) { btn.IsChecked = true; btn.ContextFlyout?.ShowAt(btn); }
+480:             else { UncheckAllExcept(btn); btn.IsChecked = true; ToolState.CurrentMode = ToolMode.Text; UpdateToolSelection(); }
+481:         }
+482:         
+483:         private void TextHighlighter_Click(object sender, RoutedEventArgs e)
+484:         {
+485:             var btn = (ToggleButton)sender;
+486:             if (ToolState.CurrentMode == ToolMode.TextHighlighter) { btn.IsChecked = true; btn.ContextFlyout?.ShowAt(btn); }
+487:             else { UncheckAllExcept(btn); btn.IsChecked = true; ToolState.CurrentMode = ToolMode.TextHighlighter; UpdateToolSelection(); }
+488:         }
+489:         
+490:         private void Lasso_Click(object sender, RoutedEventArgs e)
+491:         {
+492:             var btn = (ToggleButton)sender;
+493:             if (ToolState.CurrentMode == ToolMode.Lasso) { btn.IsChecked = true; }
+494:             else { UncheckAllExcept(btn); btn.IsChecked = true; ToolState.CurrentMode = ToolMode.Lasso; UpdateToolSelection(); }
+495:         }
+496: 
+497:         private void UpdateToolSelection()
+498:         {
+499:             if (BtnStraightLine != null)
+500:             {
+501:                 BtnStraightLine.IsChecked = ToolState.CurrentStraightLineSnap;
+502:                 BtnStraightLine.IsEnabled = ToolState.CurrentMode == ToolMode.Pen || ToolState.CurrentMode == ToolMode.Highlighter;
+503:             }
+504:         }
+505: 
+506:         private void ToggleOption_Click(object sender, RoutedEventArgs e)
+507:         {
+508:             if (sender == BtnStraightLine)
+509:             {
+510:                 ToolState.CurrentStraightLineSnap = BtnStraightLine.IsChecked == true;
+511:                 ToolState.Save();
+512:             }
+513:         }
+514:         
+515:         private void MenuMouseDraw_Click(object sender, RoutedEventArgs e) { ToolState.MouseDrawEnabled = MenuMouseDraw.IsChecked; ToolState.Save(); }
+516: 
+517:         private void ApplyToolbarDockPosition(string pos)
+518:         {
+519:             ToolbarBorder.ClearValue(Grid.RowProperty); ToolbarBorder.ClearValue(Grid.ColumnProperty);
+520:             if (pos == "Top") { Grid.SetRow(ToolbarBorder, 0); Grid.SetColumn(ToolbarBorder, 1); ToolbarStack.Orientation = Orientation.Horizontal; }
+521:             else if (pos == "Bottom") { Grid.SetRow(ToolbarBorder, 2); Grid.SetColumn(ToolbarBorder, 1); ToolbarStack.Orientation = Orientation.Horizontal; }
+522:             else if (pos == "Left") { Grid.SetRow(ToolbarBorder, 1); Grid.SetColumn(ToolbarBorder, 0); ToolbarStack.Orientation = Orientation.Vertical; }
+523:             else if (pos == "Right") { Grid.SetRow(ToolbarBorder, 1); Grid.SetColumn(ToolbarBorder, 2); ToolbarStack.Orientation = Orientation.Vertical; }
+524: 
+525:             if (SettingsMenu != null) {
+526:                 foreach (var item in SettingsMenu.Items) {
+527:                     if (item is RadioMenuFlyoutItem radio && radio.GroupName == "Dock" && radio.Tag.ToString() == pos) radio.IsChecked = true;
+528:                 }
+529:             }
+530:         }
+531: 
+532:         private void ToolbarPos_Click(object sender, RoutedEventArgs e)
+533:         {
+534:             var item = sender as MenuFlyoutItem;
+535:             string pos = item.Tag.ToString();
+536:             ToolState.ToolbarDockPosition = pos;
+537:             ToolState.Save();
+538:             ApplyToolbarDockPosition(pos);
+539:         }
+540: 
+541:         private void ApplyScrollMode(string mode)
+542:         {
+543:             bool isHoriz = (mode == "Horizontal");
+544:             if (isHoriz) { PdfPagesControl.ItemsPanel = (ItemsPanelTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(@"<ItemsPanelTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'><StackPanel Orientation='Horizontal' Spacing='20' VerticalAlignment='Center' /></ItemsPanelTemplate>"); }
+545:             else { PdfPagesControl.ItemsPanel = (ItemsPanelTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(@"<ItemsPanelTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'><StackPanel Orientation='Vertical' Spacing='20' HorizontalAlignment='Center' /></ItemsPanelTemplate>"); }
+546: 
+547:             if (SettingsMenu != null) {
+548:                 foreach (var item in SettingsMenu.Items) {
+549:                     if (item is RadioMenuFlyoutItem radio && radio.GroupName == "Scroll" && radio.Tag.ToString() == mode) radio.IsChecked = true;
+550:                 }
+551:             }
+552:         }
+553: 
+554:         private void ScrollMode_Click(object sender, RoutedEventArgs e)
+555:         {
+556:             var item = sender as MenuFlyoutItem;
+557:             string mode = item.Tag.ToString();
+558:             ToolState.ScrollMode = mode;
+559:             ToolState.Save();
+560:             ApplyScrollMode(mode);
+561:         }
+562: 
+563:         private void PenThickness_Changed(NumberBox sender, NumberBoxValueChangedEventArgs args)
+564:         {
+565:             if (sender.Tag != null && !double.IsNaN(args.NewValue))
+566:             {
+567:                 ToolState.PenThicknesses[int.Parse(sender.Tag.ToString())] = args.NewValue;
+568:                 ToolState.Save();
+569:             }
+570:         }
+571: 
+572:         private void HighlighterThickness_Changed(NumberBox sender, NumberBoxValueChangedEventArgs args)
+573:         {
+574:             if (sender.Tag != null && !double.IsNaN(args.NewValue))
+575:             {
+576:                 ToolState.HighlighterThicknesses[int.Parse(sender.Tag.ToString())] = args.NewValue;
+577:                 ToolState.Save();
+578:             }
+579:         }
+580: 
+581:         private void TextFontSize_Changed(NumberBox sender, NumberBoxValueChangedEventArgs args)
+582:         {
+583:             if (!double.IsNaN(args.NewValue))
+584:             {
+585:                 ToolState.TextFontSize = args.NewValue;
+586:                 ToolState.Save();
+587:             }
+588:         }
+589: 
+590:         private void TextFontFamily_Changed(object sender, SelectionChangedEventArgs e)
+591:         {
+592:             if (TextFontFamilyCombo.SelectedItem != null)
+593:             {
+594:                 ToolState.TextFontFamily = TextFontFamilyCombo.SelectedItem.ToString();
+595:                 ToolState.Save();
+596:             }
+597:         }
+598: 
+599:         private void TextColor_Changed(Microsoft.UI.Xaml.Controls.ColorPicker sender, Microsoft.UI.Xaml.Controls.ColorChangedEventArgs args)
+600:         {
+601:             ToolState.TextColor = new SolidColorBrush(args.NewColor);
+602:             if (IndText != null) IndText.Background = ToolState.TextColor;
+603:             ToolState.Save();
+604:         }
+605: 
+606:         private void TextHighlighterColor_Changed(Microsoft.UI.Xaml.Controls.ColorPicker sender, Microsoft.UI.Xaml.Controls.ColorChangedEventArgs args)
+607:         {
+608:             var c = args.NewColor;
+609:             ToolState.TextHighlighterColor = new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(c.A, c.R, c.G, c.B));
+610:             if (IndTextHighlighter != null) IndTextHighlighter.Background = ToolState.TextHighlighterColor;
+611:             ToolState.Save();
+612:         }
+613: 
+614:         private void EraserThickness_Changed(object sender, RangeBaseValueChangedEventArgs e) { ToolState.EraserThickness = e.NewValue; }
+615:         
+616:         private void EraserType_Changed(object sender, SelectionChangedEventArgs e)
+617:         {
+618:             if (EraserTypeCombo.SelectedIndex == 0) ToolState.EraserMode = EraserType.Stroke;
+619:             else ToolState.EraserMode = EraserType.Pixel;
+620:         }
+621: 
+622:         private void PenColor_Changed(Microsoft.UI.Xaml.Controls.ColorPicker sender, Microsoft.UI.Xaml.Controls.ColorChangedEventArgs args)
+623:         {
+624:             if (sender.Tag != null)
+625:             {
+626:                 int index = int.Parse(sender.Tag.ToString());
+627:                 ToolState.PenColors[index] = new SolidColorBrush(args.NewColor);
+628:                 var indicator = (Border)this.FindName("IndPen" + index);
+629:                 if (indicator != null) indicator.Background = ToolState.PenColors[index];
+630:                 ToolState.Save();
+631:             }
+632:         }
+633: 
+634:         private void HighlighterColor_Changed(Microsoft.UI.Xaml.Controls.ColorPicker sender, Microsoft.UI.Xaml.Controls.ColorChangedEventArgs args)
+635:         {
+636:             if (sender.Tag != null)
+637:             {
+638:                 int index = int.Parse(sender.Tag.ToString());
+639:                 var c = args.NewColor;
+640:                 ToolState.HighlighterColors[index] = new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(c.A, c.R, c.G, c.B));
+641:                 var indicator = (Border)this.FindName("IndHighlighter" + index);
+642:                 if (indicator != null) indicator.Background = ToolState.HighlighterColors[index];
+643:                 ToolState.Save();
+644:             }
+645:         }
+646: 
+647:         private async void PageView_InsertPageRequested(object sender, EventArgs e)
+648:         {
+649:             if (sender is PdfPageView pageView)
+650:             {
+651:                 int index = _pages.IndexOf(pageView);
+652:                 if (index >= 0)
+653:                 {
+654:                     await InsertBlankPageAfterAsync(index);
+655:                 }
+656:             }
+657:         }
+658: 
+659:                 private async void PageView_DeletePageRequested(object sender, EventArgs e)
+660:         {
+661:             if (sender is PdfPageView pageView)
+662:             {
+663:                 int index = _pages.IndexOf(pageView);
+664:                 if (index >= 0)
+665:                 {
+666:                     if (_pages.Count > 1) {
+667:                         await DeletePageAsync(index);
+668:                     } else {
+669:                         var dialog = new ContentDialog {
+670:                             Title = "Cannot delete page",
+671:                             Content = "You cannot delete the only page in the document.",
+672:                             CloseButtonText = "OK",
+673:                             XamlRoot = this.XamlRoot
+674:                         };
+675:                         await dialog.ShowAsync();
+676:                     }
+677:                 }
+678:             }
+679:         }
+680: 
+681:         public async Task InsertBlankPageAfterAsync(int pageIndex)
+682:         {
+683:             if (_workingFile == null) return;
+684: 
+685:             var tempFolder = Windows.Storage.ApplicationData.Current.TemporaryFolder;
+686:             var tempStateFile = await tempFolder.CreateFileAsync("temp_state.pdf", Windows.Storage.CreationCollisionOption.GenerateUniqueName);
+687:             
+688:             // Save current changes to temp state file without updating _sourceFile
+689:             await SaveAsync(tempStateFile, updateSourceFile: false);
+690: 
+691:             var tempFile = await tempFolder.CreateFileAsync("temp_insert.pdf", Windows.Storage.CreationCollisionOption.GenerateUniqueName);
+692: 
+693:             using (var inStream = await tempStateFile.OpenStreamForReadAsync())
+694:             using (var outStream = await tempFile.OpenStreamForWriteAsync())
+695:             {
+696:                 var reader = new iText.Kernel.Pdf.PdfReader(inStream);
+697:                 var writer = new iText.Kernel.Pdf.PdfWriter(outStream);
+698:                 var pdf = new iText.Kernel.Pdf.PdfDocument(reader, writer);
+699:                 
+700:                 var pageSize = iText.Kernel.Geom.PageSize.A4;
+701:                 if (pageIndex < pdf.GetNumberOfPages()) {
+702:                     var rect = pdf.GetPage(pageIndex + 1).GetPageSize();
+703:                     pageSize = new iText.Kernel.Geom.PageSize(rect);
+704:                 }
+705: 
+706:                 pdf.AddNewPage(pageIndex + 2, pageSize);
+707:                 pdf.Close();
+708:             }
+709: 
+710:             _workingFile = tempFile;
+711:             History.HasUnsavedChanges = true;
+712:             await LoadPdfAsync(_workingFile, isReload: true);
+713:         }
+714: 
+715:         public async Task DeletePageAsync(int pageIndex)
+716:         {
+717:             if (_workingFile == null) return;
+718:             
+719:             var dialog = new ContentDialog {
+720:                 Title = "Delete Page",
+721:                 Content = "Are you sure you want to delete this page?",
+722:                 PrimaryButtonText = "Delete",
+723:                 CloseButtonText = "Cancel",
+724:                 XamlRoot = this.XamlRoot
+725:             };
+726:             var result = await dialog.ShowAsync();
+727:             if (result != ContentDialogResult.Primary) return;
+728: 
+729:             var tempFolder = Windows.Storage.ApplicationData.Current.TemporaryFolder;
+730:             var tempStateFile = await tempFolder.CreateFileAsync("temp_state.pdf", Windows.Storage.CreationCollisionOption.GenerateUniqueName);
+731:             
+732:             // Save current changes to temp state file without updating _sourceFile
+733:             await SaveAsync(tempStateFile, updateSourceFile: false);
+734: 
+735:             var tempFile = await tempFolder.CreateFileAsync("temp_delete.pdf", Windows.Storage.CreationCollisionOption.GenerateUniqueName);
+736: 
+737:             using (var inStream = await tempStateFile.OpenStreamForReadAsync())
+738:             using (var outStream = await tempFile.OpenStreamForWriteAsync())
+739:             {
+740:                 var reader = new iText.Kernel.Pdf.PdfReader(inStream);
+741:                 var writer = new iText.Kernel.Pdf.PdfWriter(outStream);
+742:                 var pdf = new iText.Kernel.Pdf.PdfDocument(reader, writer);
+743:                 
+744:                 pdf.RemovePage(pageIndex + 1);
+745:                 
+746:                 pdf.Close();
+747:             }
+748: 
+749:             _workingFile = tempFile;
+750:             History.HasUnsavedChanges = true;
+751:             await LoadPdfAsync(_workingFile, isReload: true);
+752:         }
+753:         private System.Collections.Generic.List<Windows.Foundation.Point> GetSmoothedPoints(System.Collections.Generic.IList<Windows.Foundation.Point> points)
+754:         {
+755:             var smoothedPoints = new System.Collections.Generic.List<Windows.Foundation.Point>();
+756:             if (points.Count < 3)
+757:             {
+758:                 foreach (var p in points) smoothedPoints.Add(p);
+759:                 return smoothedPoints;
+760:             }
+761: 
+762:             smoothedPoints.Add(points[0]);
+763:             for (int k = 0; k < points.Count - 2; k++)
+764:             {
+765:                 var p0 = (k == 0) ? points[0] : new Windows.Foundation.Point((points[k].X + points[k + 1].X) / 2.0, (points[k].Y + points[k + 1].Y) / 2.0);
+766:                 var p1 = points[k + 1];
+767:                 var p2 = (k == points.Count - 3) ? points[k + 2] : new Windows.Foundation.Point((points[k + 1].X + points[k + 2].X) / 2.0, (points[k + 1].Y + points[k + 2].Y) / 2.0);
+768: 
+769:                 double dist = Math.Sqrt(Math.Pow(p2.X - p0.X, 2) + Math.Pow(p2.Y - p0.Y, 2));
+770:                 int segments = Math.Max(2, (int)(dist / 2.0));
+771: 
+772:                 for (int step = 1; step <= segments; step++)
+773:                 {
+774:                     double t = (double)step / segments;
+775:                     double x = Math.Pow(1 - t, 2) * p0.X + 2 * (1 - t) * t * p1.X + t * t * p2.X;
+776:                     double y = Math.Pow(1 - t, 2) * p0.Y + 2 * (1 - t) * t * p1.Y + t * t * p2.Y;
+777:                     smoothedPoints.Add(new Windows.Foundation.Point(x, y));
+778:                 }
+779:             }
+780:             return smoothedPoints;
+781:         }
+782:     }
+783: }
+The above content shows the entire, complete file contents of the requested file.

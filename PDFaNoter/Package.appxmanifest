@@ -11,7 +11,7 @@
   <Identity
     Name="Klarheit.PDFaNote"
     Publisher="CN=281F0723-5790-4BFC-BC85-F863691367D8"
-    Version="1.0.11.0" />
+    Version="1.3.12.0" />
 
   <mp:PhoneIdentity PhoneProductId="6a1b9b3e-f4c0-495d-8e5b-f36a25455533" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
@@ -43,6 +43,15 @@
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
         <uap:SplashScreen Image="Assets\SplashScreen.png" />
       </uap:VisualElements>
+      <Extensions>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="pdf">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.pdf</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+      </Extensions>
     </Application>
   </Applications>
 

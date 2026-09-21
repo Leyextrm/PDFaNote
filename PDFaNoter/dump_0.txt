@@ -1,0 +1,787 @@
+Created At: 2026-09-11T09:28:16+09:00
+Completed At: 2026-09-11T09:28:16+09:00
+File Path: `file:///d:/OneDrive/Storage/General/Programming/PDFaNoter/PDFaNoter/PdfPageView.xaml.cs`
+Total Lines: 779
+Total Bytes: 31674
+Showing lines 1 to 779
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: using Microsoft.UI.Xaml;
+2: using Microsoft.UI.Xaml.Controls;
+3: using Microsoft.UI.Xaml.Input;
+4: using Microsoft.UI.Xaml.Media;
+5: using Microsoft.UI.Xaml.Shapes;
+6: using System;
+7: using System.Collections.Generic;
+8: using Windows.Foundation;
+9: using Windows.Data.Pdf;
+10: using Windows.Storage.Streams;
+11: using Microsoft.UI.Xaml.Media.Imaging;
+12: using Microsoft.UI.Input;
+13: 
+14: namespace PDFaNoter
+15: {
+16:     public sealed partial class PdfPageView : UserControl
+17:     {
+18:         private PdfPageData _pageData;
+19:         public PdfPageData PageData => _pageData;
+20:         private bool _isDrawing = false;
+21:         private Polyline _currentStroke;
+22:         private CommandHistory _history;
+23:         private uint _activePointerId;
+24:         private Point _lastPoint;
+25:         private List<IUndoableCommand> _currentEraserSession = new List<IUndoableCommand>();
+26:         
+27:         private Microsoft.UI.Xaml.Shapes.Polygon _lassoPolygon;
+28:         private bool _isLassoing;
+29:         private List<UIElement> _selectedElements = new List<UIElement>();
+30:         private Microsoft.UI.Xaml.Shapes.Rectangle _selectionBox;
+31:         private List<PdfTextWord> _readingOrderLetters = null;
+32:         private int _textSelectionStartIndex = -1;
+33:         private int _textSelectionEndIndex = -1;
+34:         private List<Polyline> _currentTextHighlightStrokes = null;
+35:         private bool _isDraggingSelection;
+36:         private Point _lastDragPoint;
+37:         private double _totalDragX;
+38:         private double _totalDragY;
+39:         public PdfPageView()
+40:         {
+41:             this.InitializeComponent();
+42:         }
+43: 
+44:         public event EventHandler InsertPageRequested;
+45:         public event EventHandler DeletePageRequested;
+46: 
+47:         private void BtnInsertBlank_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+48:         {
+49:             InsertPageRequested?.Invoke(this, EventArgs.Empty);
+50:         }
+51: 
+52:         private void BtnDeletePage_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+53:         {
+54:             DeletePageRequested?.Invoke(this, EventArgs.Empty);
+55:         }
+56: 
+57:         public async void LoadPage(PdfPageData data, CommandHistory history)
+58:         {
+59:             _pageData = data;
+60:             _history = history;
+61:             
+62:             // Clear canvas
+63:                         InkCanvas.Children.Clear();
+64:             
+65:             if (_pageData.ExtractedStrokes != null && _pageData.ExtractedStrokes.Count > 0)
+66:             {
+67:                 foreach (var extracted in _pageData.ExtractedStrokes)
+68:                 {
+69:                     if (extracted.Points.Count < 2) continue;
+70:                     var polyline = new Microsoft.UI.Xaml.Shapes.Polyline
+71:                     {
+72:                         Stroke = new Microsoft.UI.Xaml.Media.SolidColorBrush(extracted.Color),
+73:                         StrokeThickness = extracted.Thickness,
+74:                         StrokeLineJoin = Microsoft.UI.Xaml.Media.PenLineJoin.Round,
+75:                         StrokeStartLineCap = Microsoft.UI.Xaml.Media.PenLineCap.Round,
+76:                         StrokeEndLineCap = Microsoft.UI.Xaml.Media.PenLineCap.Round
+77:                     };
+78:                     var points = new Microsoft.UI.Xaml.Media.PointCollection();
+79:                     foreach (var pt in extracted.Points)
+80:                     {
+81:                         points.Add(pt);
+82:                     }
+83:                     polyline.Points = points;
+84:                     _pageData.Strokes.Add(polyline);
+85:                 }
+86:                 _pageData.ExtractedStrokes.Clear();
+87:             }
+88: 
+89:             foreach (var stroke in _pageData.Strokes)
+90:             {
+91:                 InkCanvas.Children.Add(stroke);
+92:             }
+93: 
+94:             foreach (var tb in _pageData.Texts)
+95:             {
+96:                 if (tb.Parent != null)
+97:                 {
+98:                     ((Panel)tb.Parent).Children.Remove(tb);
+99:                 }
+100:                 InkCanvas.Children.Add(tb);
+101:             }
+102: 
+103:             using (var pdfPage = _pageData.Document.GetPage(_pageData.PageIndex))
+104:             {
+105:                 using (var stream = new InMemoryRandomAccessStream())
+106:                 {
+107:                     var renderOptions = new PdfPageRenderOptions();
+108:                     renderOptions.DestinationWidth = (uint)(pdfPage.Size.Width * 2);
+109:                     
+110:                     await pdfPage.RenderToStreamAsync(stream, renderOptions);
+111:                     var bitmap = new BitmapImage();
+112:                     await bitmap.SetSourceAsync(stream);
+113:                     PdfImage.Source = bitmap;
+114:                     
+115:                     InkCanvas.Width = pdfPage.Size.Width * 2;
+116:                     InkCanvas.Height = pdfPage.Size.Height * 2;
+117:                     PdfImage.Width = pdfPage.Size.Width * 2;
+118:                     PdfImage.Height = pdfPage.Size.Height * 2;
+119:                     PageContainer.Width = pdfPage.Size.Width * 2;
+120:                     PageContainer.Height = pdfPage.Size.Height * 2;
+121:                 }
+122:             }
+123:         }
+124: 
+125:         private void EnsureReadingOrderLetters()
+126:         {
+127:             if (_readingOrderLetters != null) return;
+128:             if (_pageData.Words == null || _pageData.Words.Count == 0)
+129:             {
+130:                 _readingOrderLetters = new List<PdfTextWord>();
+131:                 return;
+132:             }
+133:             
+134:             // In most PDFs, page.Letters is in content stream order, which naturally 
+135:             // follows reading order (including columns). Manually grouping by Y 
+136:             // destroys column separation, so we just use the raw order.
+137:             _readingOrderLetters = new List<PdfTextWord>(_pageData.Words);
+138:         }
+139: 
+140:         private int GetClosestLetterIndex(Point pt)
+141:         {
+142:             EnsureReadingOrderLetters();
+143:             if (_readingOrderLetters.Count == 0) return -1;
+144:             
+145:             int bestIdx = -1;
+146:             double bestDist = double.MaxValue;
+147:             double scale = 2.0 / 0.75;
+148:             
+149:             for (int i = 0; i < _readingOrderLetters.Count; i++)
+150:             {
+151:                 var w = _readingOrderLetters[i];
+152:                 double wLeft = w.Bounds.X * scale;
+153:                 double wRight = wLeft + w.Bounds.Width * scale;
+154:                 double wordTopPdf = w.Bounds.Y + w.Bounds.Height;
+155:                 double wTop = InkCanvas.Height - (wordTopPdf * scale);
+156:                 double wBottom = InkCanvas.Height - (w.Bounds.Y * scale);
+157:                 
+158:                 double cx = (wLeft + wRight) / 2.0;
+159:                 double cy = (wTop + wBottom) / 2.0;
+160:                 double dx = pt.X - cx;
+161:                 double dy = pt.Y - cy;
+162:                 double dist = dx*dx + dy*dy;
+163:                 
+164:                 if (dist < bestDist)
+165:                 {
+166:                     bestDist = dist;
+167:                     bestIdx = i;
+168:                 }
+169:             }
+170:             return bestIdx;
+171:         }
+172: 
+173:         private void InkCanvas_PointerPressed(object sender, PointerRoutedEventArgs e)
+174:         {
+175:             var pt = e.GetCurrentPoint(InkCanvas);
+176:             if (ToolState.CurrentMode == ToolMode.Text)
+177:             {
+178:                 var textBox = new TextBox
+179:                 {
+180:                     MinWidth = 50,
+181:                     MinHeight = 40,
+182:                     Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+183:                     BorderThickness = new Thickness(1),
+184:                     BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Gray),
+185:                     Foreground = ToolState.TextColor,
+186:                     AcceptsReturn = true,
+187:                     TextWrapping = TextWrapping.NoWrap,
+188:                     FontSize = ToolState.TextFontSize,
+189:                     FontFamily = new FontFamily(ToolState.TextFontFamily)
+190:                 };
+191:                 
+192:                 Canvas.SetLeft(textBox, pt.Position.X);
+193:                 Canvas.SetTop(textBox, pt.Position.Y);
+194:                 
+195:                 textBox.LostFocus += (s, args) =>
+196:                 {
+197:                     if (string.IsNullOrWhiteSpace(textBox.Text))
+198:                     {
+199:                         InkCanvas.Children.Remove(textBox);
+200:                         _pageData.Texts.Remove(textBox);
+201:                     }
+202:                     else
+203:                     {
+204:                         textBox.BorderThickness = new Thickness(0);
+205:                     }
+206:                 };
+207:                 
+208:                 textBox.GotFocus += (s, args) =>
+209:                 {
+210:                     textBox.BorderThickness = new Thickness(1);
+211:                 };
+212: 
+213:                 InkCanvas.Children.Add(textBox);
+214:                 _pageData.Texts.Add(textBox);
+215:                 textBox.Focus(FocusState.Programmatic);
+216:                 
+217:                 e.Handled = true;
+218:                 return;
+219:             }
+220:             if (_selectionBox != null)
+221:             {
+222:                 double left = Canvas.GetLeft(_selectionBox);
+223:                 double top = Canvas.GetTop(_selectionBox);
+224:                 if (pt.Position.X >= left && pt.Position.X <= left + _selectionBox.Width && 
+225:                     pt.Position.Y >= top && pt.Position.Y <= top + _selectionBox.Height)
+226:                 {
+227:                     _isDraggingSelection = true;
+228:                     _isDrawing = true;
+229:                     _activePointerId = pt.PointerId;
+230:                     _lastDragPoint = pt.Position;
+231:                     _totalDragX = 0;
+232:                     _totalDragY = 0;
+233:                     InkCanvas.CapturePointer(e.Pointer);
+234:                     e.Handled = true;
+235:                     return;
+236:                 }
+237:                 else
+238:                 {
+239:                     ClearSelection();
+240:                 }
+241:             }
+242: 
+243:             if (pt.PointerDeviceType != PointerDeviceType.Pen && !ToolState.MouseDrawEnabled) return;
+244:             if (!pt.IsInContact) return;
+245: 
+246:             InkCanvas.ManipulationMode = ManipulationModes.None;
+247:             _isDrawing = true;
+248:             _activePointerId = pt.PointerId;
+249:             _lastPoint = pt.Position;
+250:             InkCanvas.CapturePointer(e.Pointer);
+251: 
+252:             bool isLasso = ToolState.CurrentMode == ToolMode.Lasso || pt.Properties.IsBarrelButtonPressed;
+253:             bool isEraser = pt.Properties.IsEraser || ToolState.CurrentMode == ToolMode.Eraser;
+254: 
+255:             if (isLasso)
+256:             {
+257:                 _lassoPolygon = new Microsoft.UI.Xaml.Shapes.Polygon
+258:                 {
+259:                     Stroke = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Blue),
+260:                     StrokeThickness = 1,
+261:                     StrokeDashArray = new Microsoft.UI.Xaml.Media.DoubleCollection { 4, 4 },
+262:                     Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(50, 0, 0, 255))
+263:                 };
+264:                 _lassoPolygon.Points.Add(pt.Position);
+265:                 InkCanvas.Children.Add(_lassoPolygon);
+266:                 _isLassoing = true;
+267:             }
+268:             else if (isEraser)
+269:             {
+270:                 _currentEraserSession.Clear();
+271:                 Erase(pt.Position);
+272:             }
+273:             else if (ToolState.CurrentMode == ToolMode.TextHighlighter)
+274:             {
+275:                 _textSelectionStartIndex = GetClosestLetterIndex(pt.Position);
+276:                 _textSelectionEndIndex = _textSelectionStartIndex;
+277:                 UpdateTextSelectionPreview();
+278:             }
+279:             else
+280:             {
+281:                 _currentStroke = new Polyline();
+282:                 _currentStroke.StrokeLineJoin = PenLineJoin.Round;
+283:                 _currentStroke.StrokeStartLineCap = PenLineCap.Round;
+284:                 _currentStroke.StrokeEndLineCap = PenLineCap.Round;
+285:                 
+286:                 if (ToolState.CurrentMode == ToolMode.Pen)
+287:                 {
+288:                     _currentStroke.Stroke = ToolState.PenColor;
+289:                     _currentStroke.StrokeThickness = ToolState.PenThickness;
+290:                 }
+291:                 else if (ToolState.CurrentMode == ToolMode.Highlighter)
+292:                 {
+293:                     _currentStroke.Stroke = ToolState.HighlighterColor;
+294:                     _currentStroke.StrokeThickness = ToolState.HighlighterThickness;
+295:                     _currentStroke.StrokeStartLineCap = PenLineCap.Square;
+296:                     _currentStroke.StrokeEndLineCap = PenLineCap.Square;
+297:                 }
+298: 
+299:                 _currentStroke.Points.Add(pt.Position);
+300:                 _pageData.Strokes.Add(_currentStroke);
+301:                 InkCanvas.Children.Add(_currentStroke);
+302:             }
+303:             e.Handled = true;
+304:         }
+305: 
+306:         private void InkCanvas_PointerMoved(object sender, PointerRoutedEventArgs e)
+307:         {
+308:             var pt = e.GetCurrentPoint(InkCanvas);
+309:             
+310:             if (ToolState.CurrentMode == ToolMode.TextHighlighter)
+311:             {
+312:                 this.ProtectedCursor = Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.IBeam);
+313:             }
+314:             else
+315:             {
+316:                 this.ProtectedCursor = Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.Arrow);
+317:             }
+318:             
+319:             if (_isDraggingSelection)
+320:             {
+321:                 if (!pt.IsInContact)
+322:                 {
+323:                     InkCanvas_PointerReleased(sender, e);
+324:                     return;
+325:                 }
+326: 
+327:                 double dx = pt.Position.X - _lastDragPoint.X;
+328:                 double dy = pt.Position.Y - _lastDragPoint.Y;
+329:                 _totalDragX += dx;
+330:                 _totalDragY += dy;
+331:                 
+332:                 Canvas.SetLeft(_selectionBox, Canvas.GetLeft(_selectionBox) + dx);
+333:                 Canvas.SetTop(_selectionBox, Canvas.GetTop(_selectionBox) + dy);
+334:                 
+335:                 foreach (var elem in _selectedElements)
+336:                 {
+337:                     if (elem is Polyline poly)
+338:                     {
+339:                         var newPoints = new Microsoft.UI.Xaml.Media.PointCollection();
+340:                         for (int i = 0; i < poly.Points.Count; i++)
+341:                         {
+342:                             var p = poly.Points[i];
+343:                             newPoints.Add(new Windows.Foundation.Point(p.X + dx, p.Y + dy));
+344:                         }
+345:                         poly.Points = newPoints;
+346:                     }
+347:                     else if (elem is TextBox tb)
+348:                     {
+349:                         Canvas.SetLeft(tb, Canvas.GetLeft(tb) + dx);
+350:                         Canvas.SetTop(tb, Canvas.GetTop(tb) + dy);
+351:                     }
+352:                 }
+353:                 _lastDragPoint = pt.Position;
+354:                 e.Handled = true;
+355:                 return;
+356:             }
+357: 
+358:             if (!_isDrawing) return;
+359:             if (pt.PointerId != _activePointerId) return;
+360: 
+361:             if (!pt.IsInContact)
+362:             {
+363:                 InkCanvas_PointerReleased(sender, e);
+364:                 return;
+365:             }
+366: 
+367:             bool isLasso = _isLassoing || pt.Properties.IsBarrelButtonPressed;
+368:             bool isEraser = pt.Properties.IsEraser || ToolState.CurrentMode == ToolMode.Eraser;
+369: 
+370:             if (_isLassoing)
+371:             {
+372:                 _lassoPolygon.Points.Add(pt.Position);
+373:             }
+374:             else if (isEraser)
+375:             {
+376:                 Erase(pt.Position);
+377:                 _lastPoint = pt.Position;
+378:             }
+379:             else if (ToolState.CurrentMode == ToolMode.TextHighlighter)
+380:             {
+381:                 int newEnd = GetClosestLetterIndex(pt.Position);
+382:                 if (newEnd != _textSelectionEndIndex && newEnd != -1)
+383:                 {
+384:                     _textSelectionEndIndex = newEnd;
+385:                     UpdateTextSelectionPreview();
+386:                 }
+387:             }
+388:             else if (_currentStroke != null)
+389:             {
+390:                 _currentStroke.Points.Add(pt.Position);
+391:             }
+392:             e.Handled = true;
+393:         }
+394: 
+395:         private void UpdateTextSelectionPreview()
+396:         {
+397:             if (_currentTextHighlightStrokes != null)
+398:             {
+399:                 foreach (var s in _currentTextHighlightStrokes)
+400:                 {
+401:                     InkCanvas.Children.Remove(s);
+402:                 }
+403:                 _currentTextHighlightStrokes.Clear();
+404:             }
+405:             else
+406:             {
+407:                 _currentTextHighlightStrokes = new List<Polyline>();
+408:             }
+409:             
+410:             if (_textSelectionStartIndex == -1 || _textSelectionEndIndex == -1) return;
+411:             
+412:             int start = Math.Min(_textSelectionStartIndex, _textSelectionEndIndex);
+413:             int end = Math.Max(_textSelectionStartIndex, _textSelectionEndIndex);
+414:             
+415:             var selectedWords = new List<PdfTextWord>();
+416:             for (int i = start; i <= end; i++)
+417:             {
+418:                 selectedWords.Add(_readingOrderLetters[i]);
+419:             }
+420:             
+421:             var lines = new List<List<PdfTextWord>>();
+422:             foreach (var word in selectedWords)
+423:             {
+424:                 bool added = false;
+425:                 foreach (var line in lines)
+426:                 {
+427:                     var l0 = line[0];
+428:                     double overlapTop = Math.Max(l0.Bounds.Y, word.Bounds.Y);
+429:                     double overlapBottom = Math.Min(l0.Bounds.Y + l0.Bounds.Height, word.Bounds.Y + word.Bounds.Height);
+430:                     if (overlapBottom > overlapTop)
+431:                     {
+432:                         double overlapHeight = overlapBottom - overlapTop;
+433:                         double minHeight = Math.Min(l0.Bounds.Height, word.Bounds.Height);
+434:                         if (overlapHeight > minHeight * 0.3)
+435:                         {
+436:                             line.Add(word);
+437:                             added = true;
+438:                             break;
+439:                         }
+440:                     }
+441:                 }
+442:                 if (!added) lines.Add(new List<PdfTextWord> { word });
+443:             }
+444:             
+445:             double scale = 2.0 / 0.75;
+446:             foreach (var line in lines)
+447:             {
+448:                 double minX = double.MaxValue;
+449:                 double maxX = double.MinValue;
+450:                 double minTop = double.MaxValue;
+451:                 double maxBottom = double.MinValue;
+452:                 
+453:                 foreach (var w in line)
+454:                 {
+455:                     double wLeft = w.Bounds.X * scale;
+456:                     double wRight = wLeft + w.Bounds.Width * scale;
+457:                     if (wLeft < minX) minX = wLeft;
+458:                     if (wRight > maxX) maxX = wRight;
+459:                     
+460:                     double wordTopPdf = w.Bounds.Y + w.Bounds.Height;
+461:                     double wTop = InkCanvas.Height - (wordTopPdf * scale);
+462:                     double wBottom = InkCanvas.Height - (w.Bounds.Y * scale);
+463:                     
+464:                     if (wTop < minTop) minTop = wTop;
+465:                     if (wBottom > maxBottom) maxBottom = wBottom;
+466:                 }
+467:                 
+468:                 double maxH = maxBottom - minTop;
+469:                 double centerY = (minTop + maxBottom) / 2.0;
+470:                 
+471:                 var stroke = new Polyline();
+472:                 stroke.StrokeLineJoin = PenLineJoin.Round;
+473:                 stroke.StrokeStartLineCap = PenLineCap.Flat;
+474:                 stroke.StrokeEndLineCap = PenLineCap.Flat;
+475:                 
+476:                 // Keep the color somewhat transparent for preview and saving
+477:                 stroke.Stroke = ToolState.TextHighlighterColor;
+478:                 stroke.StrokeThickness = maxH;
+479:                 
+480:                 stroke.Points.Add(new Point(minX, centerY));
+481:                 stroke.Points.Add(new Point(maxX, centerY));
+482:                 
+483:                 _currentTextHighlightStrokes.Add(stroke);
+484:                 InkCanvas.Children.Add(stroke);
+485:             }
+486:         }
+487: 
+488:         private void InkCanvas_PointerReleased(object sender, PointerRoutedEventArgs e)
+489:         {
+490:             if (!_isDrawing) return;
+491:             var pt = e.GetCurrentPoint(InkCanvas);
+492:             if (pt.PointerId != _activePointerId) return;
+493: 
+494:             InkCanvas.ManipulationMode = ManipulationModes.System;
+495:             InkCanvas.ReleasePointerCapture(e.Pointer);
+496:             _isDrawing = false;
+497:             
+498:             if (_isDraggingSelection)
+499:             {
+500:                 _isDraggingSelection = false;
+501:                 if (_totalDragX != 0 || _totalDragY != 0)
+502:                 {
+503:                     _history?.Add(new MoveElementsCommand(_selectedElements, _totalDragX, _totalDragY));
+504:                 }
+505:                 e.Handled = true;
+506:                 return;
+507:             }
+508:             
+509:             if (_isLassoing)
+510:             {
+511:                 _isLassoing = false;
+512:                 if (_lassoPolygon != null)
+513:                 {
+514:                     FindSelectedElements(_lassoPolygon);
+515:                     InkCanvas.Children.Remove(_lassoPolygon);
+516:                     _lassoPolygon = null;
+517:                 }
+518:                 e.Handled = true;
+519:                 return;
+520:             }
+521:             
+522:             if (ToolState.CurrentMode == ToolMode.TextHighlighter)
+523:             {
+524:                 if (_currentTextHighlightStrokes != null && _currentTextHighlightStrokes.Count > 0)
+525:                 {
+526:                     if (_history != null)
+527:                     {
+528:                         var commands = new List<IUndoableCommand>();
+529:                         foreach (var s in _currentTextHighlightStrokes)
+530:                         {
+531:                             commands.Add(new AddStrokeCommand(_pageData, s, InkCanvas));
+532:                             _pageData.Strokes.Add(s);
+533:                             // It is already in InkCanvas.Children from UpdateTextSelectionPreview
+534:                         }
+535:                         _history.Add(new MacroCommand(commands));
+536:                     }
+537:                     _currentTextHighlightStrokes = null;
+538:                 }
+539:                 _textSelectionStartIndex = -1;
+540:                 _textSelectionEndIndex = -1;
+541:                 e.Handled = true;
+542:                 return;
+543:             }
+544:             
+545:             if (_currentStroke != null && ToolState.CurrentStraightLineSnap && _currentStroke.Points.Count > 1)
+546:             {
+547:                 var first = _currentStroke.Points[0];
+548:                 var last = _currentStroke.Points[_currentStroke.Points.Count - 1];
+549:                 _currentStroke.Points.Clear();
+550:                 
+551:                 double dx = last.X - first.X;
+552:                 double dy = last.Y - first.Y;
+553:                 double dist = Math.Sqrt(dx*dx + dy*dy);
+554:                 int steps = Math.Max(1, (int)(dist / 5.0));
+555:                 
+556:                 for (int i = 0; i <= steps; i++)
+557:                 {
+558:                     _currentStroke.Points.Add(new Point(first.X + dx * i / steps, first.Y + dy * i / steps));
+559:                 }
+560:             }
+561:             if (_currentStroke != null)
+562:             {
+563:                 if (_history != null) _history.Add(new AddStrokeCommand(_pageData, _currentStroke, InkCanvas));
+564:                 _currentStroke = null;
+565:             }
+566:             else if (_currentEraserSession.Count > 0)
+567:             {
+568:                 if (_history != null) _history.Add(new MacroCommand(new List<IUndoableCommand>(_currentEraserSession)));
+569:                 _currentEraserSession.Clear();
+570:             }
+571:             // Release capture
+572:             InkCanvas.ReleasePointerCapture(e.Pointer);
+573: 
+574:             _currentStroke = null;
+575:             e.Handled = true;
+576:         }
+577: 
+578:         private void Erase(Point pt)
+579:         {
+580:             double radius = ToolState.EraserThickness / 2;
+581:             var toAdd = new List<Polyline>();
+582:             var toRemove = new List<Polyline>();
+583: 
+584:             foreach (var stroke in _pageData.Strokes)
+585:             {
+586:                 if (ToolState.EraserMode == EraserType.Stroke)
+587:                 {
+588:                     // Stroke eraser: check if any segment is hit
+589:                     if (IsHit(stroke, pt, radius))
+590:                     {
+591:                         toRemove.Add(stroke);
+592:                     }
+593:                 }
+594:                 else
+595:                 {
+596:                     // Pixel eraser: split stroke
+597:                     var pts = stroke.Points;
+598:                     List<Point> currentPath = new List<Point>();
+599:                     bool modified = false;
+600: 
+601:                     for (int i = 0; i < pts.Count; i++)
+602:                     {
+603:                         // Check distance to point
+604:                         double dist = GetDistance(pts[i], pt);
+605:                         // Also check segment to previous point
+606:                         double segDist = (i > 0) ? DistanceToSegment(pt, pts[i-1], pts[i]) : double.MaxValue;
+607: 
+608:                         if (dist <= radius || segDist <= radius)
+609:                         {
+610:                             modified = true;
+611:                             if (currentPath.Count > 1)
+612:                             {
+613:                                 toAdd.Add(CloneStroke(stroke, currentPath));
+614:                             }
+615:                             currentPath = new List<Point>();
+616:                         }
+617:                         else
+618:                         {
+619:                             currentPath.Add(pts[i]);
+620:                         }
+621:                     }
+622: 
+623:                     if (modified)
+624:                     {
+625:                         if (currentPath.Count > 1) toAdd.Add(CloneStroke(stroke, currentPath));
+626:                         toRemove.Add(stroke);
+627:                     }
+628:                 }
+629:             }
+630: 
+631:                         foreach (var s in toRemove) { _pageData.Strokes.Remove(s); InkCanvas.Children.Remove(s); }
+632:             foreach (var s in toAdd) { _pageData.Strokes.Add(s); InkCanvas.Children.Add(s); }
+633:             if (toRemove.Count > 0 || toAdd.Count > 0)
+634:             {
+635:                 if (toAdd.Count == 0) _currentEraserSession.Add(new RemoveStrokesCommand(_pageData, toRemove, InkCanvas));
+636:                 else _currentEraserSession.Add(new ReplaceStrokesCommand(_pageData, toRemove, toAdd, InkCanvas));
+637:             }
+638:         }
+639: 
+640:         private bool IsHit(Polyline stroke, Point p, double radius)
+641:         {
+642:             var pts = stroke.Points;
+643:             for (int i = 1; i < pts.Count; i++)
+644:             {
+645:                 if (DistanceToSegment(p, pts[i - 1], pts[i]) <= radius + stroke.StrokeThickness / 2) return true;
+646:             }
+647:             if (pts.Count == 1 && GetDistance(p, pts[0]) <= radius + stroke.StrokeThickness / 2) return true;
+648:             return false;
+649:         }
+650: 
+651:         private double GetDistance(Point a, Point b)
+652:         {
+653:             double dx = a.X - b.X;
+654:             double dy = a.Y - b.Y;
+655:             return Math.Sqrt(dx * dx + dy * dy);
+656:         }
+657: 
+658:         private double DistanceToSegment(Point p, Point a, Point b)
+659:         {
+660:             double l2 = (a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y);
+661:             if (l2 == 0) return GetDistance(p, a);
+662:             double t = ((p.X - a.X) * (b.X - a.X) + (p.Y - a.Y) * (b.Y - a.Y)) / l2;
+663:             t = Math.Max(0, Math.Min(1, t));
+664:             Point proj = new Point(a.X + t * (b.X - a.X), a.Y + t * (b.Y - a.Y));
+665:             return GetDistance(p, proj);
+666:         }
+667: 
+668:         private Polyline CloneStroke(Polyline source, List<Point> points)
+669:         {
+670:             var p = new Polyline();
+671:             p.StrokeLineJoin = source.StrokeLineJoin;
+672:             p.StrokeStartLineCap = source.StrokeStartLineCap;
+673:             p.StrokeEndLineCap = source.StrokeEndLineCap;
+674:             p.Stroke = source.Stroke;
+675:             p.StrokeThickness = source.StrokeThickness;
+676:             foreach (var pt in points) p.Points.Add(pt);
+677:             return p;
+678:         }
+679:         private void ClearSelection()
+680:         {
+681:             if (_selectionBox != null)
+682:             {
+683:                 InkCanvas.Children.Remove(_selectionBox);
+684:                 _selectionBox = null;
+685:             }
+686:             _selectedElements.Clear();
+687:         }
+688: 
+689:         private bool IsPointInPolygon(Point p, Microsoft.UI.Xaml.Media.PointCollection poly)
+690:         {
+691:             Point p1, p2;
+692:             bool inside = false;
+693:             if (poly.Count < 3) return false;
+694: 
+695:             var oldPoint = new Point(poly[poly.Count - 1].X, poly[poly.Count - 1].Y);
+696:             for (int i = 0; i < poly.Count; i++)
+697:             {
+698:                 var newPoint = new Point(poly[i].X, poly[i].Y);
+699:                 if (newPoint.X > oldPoint.X) { p1 = oldPoint; p2 = newPoint; }
+700:                 else { p1 = newPoint; p2 = oldPoint; }
+701: 
+702:                 if ((newPoint.X < p.X) == (p.X <= oldPoint.X)
+703:                     && (p.Y - p1.Y) * (p2.X - p1.X) < (p2.Y - p1.Y) * (p.X - p1.X))
+704:                 {
+705:                     inside = !inside;
+706:                 }
+707:                 oldPoint = newPoint;
+708:             }
+709:             return inside;
+710:         }
+711: 
+712:         private void FindSelectedElements(Microsoft.UI.Xaml.Shapes.Polygon polygon)
+713:         {
+714:             ClearSelection();
+715:             double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
+716:             
+717:             foreach (var stroke in _pageData.Strokes)
+718:             {
+719:                 foreach (var pt in stroke.Points)
+720:                 {
+721:                     if (IsPointInPolygon(pt, polygon.Points))
+722:                     {
+723:                         _selectedElements.Add(stroke);
+724:                         foreach (var p2 in stroke.Points)
+725:                         {
+726:                             if (p2.X < minX) minX = p2.X;
+727:                             if (p2.X > maxX) maxX = p2.X;
+728:                             if (p2.Y < minY) minY = p2.Y;
+729:                             if (p2.Y > maxY) maxY = p2.Y;
+730:                         }
+731:                         break;
+732:                     }
+733:                 }
+734:             }
+735: 
+736:             foreach (var tb in _pageData.Texts)
+737:             {
+738:                 double left = Canvas.GetLeft(tb);
+739:                 double top = Canvas.GetTop(tb);
+740:                 double w = tb.ActualWidth;
+741:                 double h = tb.ActualHeight;
+742:                 Point center = new Point(left + w / 2, top + h / 2);
+743:                 if (IsPointInPolygon(center, polygon.Points))
+744:                 {
+745:                     _selectedElements.Add(tb);
+746:                     if (left < minX) minX = left;
+747:                     if (left + w > maxX) maxX = left + w;
+748:                     if (top < minY) minY = top;
+749:                     if (top + h > maxY) maxY = top + h;
+750:                 }
+751:             }
+752: 
+753:             if (_selectedElements.Count > 0)
+754:             {
+755:                 _selectionBox = new Microsoft.UI.Xaml.Shapes.Rectangle
+756:                 {
+757:                     Width = maxX - minX + 20,
+758:                     Height = maxY - minY + 20,
+759:                     Stroke = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Blue),
+760:                     StrokeThickness = 2,
+761:                     StrokeDashArray = new Microsoft.UI.Xaml.Media.DoubleCollection { 4, 4 },
+762:                     Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(20, 0, 0, 255))
+763:                 };
+764:                 Canvas.SetLeft(_selectionBox, minX - 10);
+765:                 Canvas.SetTop(_selectionBox, minY - 10);
+766:                 InkCanvas.Children.Add(_selectionBox);
+767:             }
+768:         }
+769:     }
+770: }
+771: 
+772: 
+773: 
+774: 
+775: 
+776: 
+777: 
+778: 
+779: 
+The above content shows the entire, complete file contents of the requested file.

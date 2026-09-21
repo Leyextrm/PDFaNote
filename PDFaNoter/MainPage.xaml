@@ -3,7 +3,20 @@
     x:Class="PDFaNoter.MainPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:PDFaNoter">
+    xmlns:local="using:PDFaNoter"
+    KeyboardAcceleratorPlacementMode="Hidden">
+
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Modifiers="Control" Key="Z" Invoked="Undo_Invoked" />
+        <KeyboardAccelerator Modifiers="Control,Shift" Key="Z" Invoked="Redo_Invoked" />
+        <KeyboardAccelerator Modifiers="Control" Key="Y" Invoked="Redo_Invoked" />
+        <KeyboardAccelerator Modifiers="Control" Key="W" Invoked="CloseTab_Invoked" />
+        <KeyboardAccelerator Modifiers="Control" Key="O" Invoked="Open_Invoked" />
+        <KeyboardAccelerator Modifiers="Control" Key="S" Invoked="Save_Invoked" />
+        <KeyboardAccelerator Modifiers="Control,Shift" Key="S" Invoked="SaveAs_Invoked" />
+        <KeyboardAccelerator Modifiers="Control" Key="Tab" Invoked="NextTab_Invoked" />
+        <KeyboardAccelerator Modifiers="Control,Shift" Key="Tab" Invoked="PrevTab_Invoked" />
+    </Page.KeyboardAccelerators>
 
     <Grid x:Name="RootGrid" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <TabView x:Name="MainTabView" 
@@ -12,11 +25,15 @@
                  TabCloseRequested="MainTabView_TabCloseRequested">
             <TabView.TabStripFooter>
                 <CommandBar DefaultLabelPosition="Right" Background="Transparent">
-                    <AppBarButton Icon="OpenFile" Label="Open" Click="BtnOpen_Click" />
-                    <AppBarButton Icon="Save" Label="Save" Click="BtnSave_Click" />
+                    <AppBarButton Icon="OpenFile" Label="Open" Click="BtnOpen_Click" ToolTipService.ToolTip="Open (Ctrl+O)" />
+                    <AppBarButton Icon="Save" Label="Save" Click="BtnSave_Click" ToolTipService.ToolTip="Save (Ctrl+S)" />
+                    <AppBarButton Icon="SaveLocal" Label="Save As" Click="BtnSaveAs_Click" ToolTipService.ToolTip="Save As (Ctrl+Shift+S)" />
                     <AppBarButton Icon="Help" Label="About" Click="BtnAbout_Click" />
                 </CommandBar>
             </TabView.TabStripFooter>
         </TabView>
+        
+        <InfoBar x:Name="SaveNotification" IsOpen="False" Severity="Success" Title="Saved" Message="Document saved successfully." 
+                 HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,60" />
     </Grid>
 </Page>

@@ -1,0 +1,267 @@
+--- BLOCK 0 ---
+Created At: 2026-09-11T09:31:00+09:00
+Completed At: 2026-09-11T09:31:00+09:00
+File Path: `file:///d:/OneDrive/Storage/General/Programming/PDFaNoter/PDFaNoter/ToolState.cs`
+Total Lines: 231
+Total Bytes: 11497
+Showing lines 1 to 231
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: using Microsoft.UI.Xaml.Media;
+2: using Microsoft.UI;
+3: using System.Collections.Generic;
+4: using Microsoft.UI.Xaml.Shapes;
+5: using Windows.Data.Pdf;
+6: 
+7: namespace PDFaNoter
+8: {
+9:     public enum ToolMode { Pen, Highlighter, Eraser, Text, Lasso, TextHighlighter }
+10:     public enum EraserType { Stroke, Pixel }
+11: 
+12:     public static class ToolState
+13:     {
+14:         public static ToolMode CurrentMode { get; set; } = ToolMode.Pen;
+15:         public static int CurrentPenSlot { get; set; } = 0;
+16:         public static int CurrentHighlighterSlot { get; set; } = 0;
+17: 
+18:         public static SolidColorBrush[] PenColors = new SolidColorBrush[5] 
+19:         {
+20:             new SolidColorBrush(Colors.Red),
+21:             new SolidColorBrush(Colors.Blue),
+22:             new SolidColorBrush(Colors.Black),
+23:             new SolidColorBrush(Colors.Green),
+24:             new SolidColorBrush(Colors.Purple)
+25:         };
+26:         public static double[] PenThicknesses = new double[5] { 3, 3, 3, 3, 3 };
+27: 
+28:         public static SolidColorBrush[] HighlighterColors = new SolidColorBrush[3]
+29:         {
+30:             new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(100, 255, 255, 0)),
+31:             new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(100, 0, 255, 0)),
+32:             new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(100, 0, 255, 255))
+33:         };
+34:         public static double[] HighlighterThicknesses = new double[3] { 15, 15, 15 };
+35: 
+36:         public static EraserType EraserMode { get; set; } = EraserType.Stroke;
+37:         public static double EraserThickness { get; set; } = 10;
+38:         
+39:         public static bool[] PenStraightLine = new bool[5];
+40:         public static bool[] HighlighterStraightLine = new bool[3];
+41:         
+42:         public static bool CurrentStraightLineSnap 
+43:         { 
+44:             get 
+45:             {
+46:                 if (CurrentMode == ToolMode.Pen) return PenStraightLine[CurrentPenSlot];
+47:                 if (CurrentMode == ToolMode.Highlighter) return HighlighterStraightLine[CurrentHighlighterSlot];
+48:                 return false;
+49:             }
+50:             set
+51:             {
+52:                 if (CurrentMode == ToolMode.Pen) PenStraightLine[CurrentPenSlot] = value;
+53:                 else if (CurrentMode == ToolMode.Highlighter) HighlighterStraightLine[CurrentHighlighterSlot] = value;
+54:             }
+55:         }
+56:         public static bool MouseDrawEnabled { get; set; } = false;
+57:         public static string ToolbarDockPosition { get; set; } = "Top";
+58:         public static string ScrollMode { get; set; } = "Vertical";
+59: 
+60:         public static SolidColorBrush PenColor => PenColors[CurrentPenSlot];
+61:         public static double PenThickness => PenThicknesses[CurrentPenSlot];
+62:         
+63:         public static SolidColorBrush HighlighterColor => HighlighterColors[CurrentHighlighterSlot];
+64:         public static double HighlighterThickness => HighlighterThicknesses[CurrentHighlighterSlot];
+65:         
+66:         public static SolidColorBrush TextHighlighterColor { get; set; } = new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(100, 255, 255, 0));
+67: 
+68:         public static SolidColorBrush TextColor { get; set; } = new SolidColorBrush(Colors.Black);
+69:         public static double TextFontSize { get; set; } = 20;
+70:         public static string TextFontFamily { get; set; } = "Malgun Gothic";
+71:         
+72:         public static Dictionary<string, string> AvailableFonts { get; } = new Dictionary<string, string>();
+73:         public static List<string> SupportedFonts { get; } = new List<string>();
+74:         
+75:         public static void LoadAvailableFonts() {
+76:             try {
+77:                 using (var fontsKey = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts")) {
+78:                     if (fontsKey != null) {
+79:                         foreach (string fontName in fontsKey.GetValueNames()) {
+80:                             string fontFile = fontsKey.GetValue(fontName).ToString();
+81:                             if (!fontFile.Contains("\\")) {
+82:                                 fontFile = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), fontFile);
+83:                             }
+84:                             
+85:                             if (fontFile.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) || 
+86:                                 fontFile.EndsWith(".ttc", StringComparison.OrdinalIgnoreCase)) {
+87:                                 
+88:                                 string cleanName = fontName.Replace(" (TrueType)", "").Replace(" (OpenType)", "");
+89:                                 if (fontFile.EndsWith(".ttc", StringComparison.OrdinalIgnoreCase)) {
+90:                                     fontFile += ",0";
+91:                                 }
+92:                                 
+93:                                 if (!AvailableFonts.ContainsKey(cleanName)) {
+94:                                     AvailableFonts.Add(cleanName, fontFile);
+95:                                 }
+96:                             }
+97:                         }
+98:                     }
+99:                 }
+100:             } catch { }
+101:             
+102:             if (AvailableFonts.Count == 0) {
+103:                 AvailableFonts["Malgun Gothic"] = "c:\\windows\\fonts\\malgun.ttf";
+104:                 AvailableFonts["Batang"] = "c:\\windows\\fonts\\batang.ttc,0";
+105:                 AvailableFonts["Gulim"] = "c:\\windows\\fonts\\gulim.ttc,0";
+106:                 AvailableFonts["Arial"] = "c:\\windows\\fonts\\arial.ttf";
+107:                 AvailableFonts["Times New Roman"] = "c:\\windows\\fonts\\times.ttf";
+108:                 AvailableFonts["Consolas"] = "c:\\windows\\fonts\\consola.ttf";
+109:             }
+110:             
+111:             SupportedFonts.AddRange(AvailableFonts.Keys);
+112:             SupportedFonts.Sort();
+113:         }
+114:         
+115:         public static string GetFontPath(string fontFamily) {
+116:             if (string.IsNullOrEmpty(fontFamily)) return "c:\\windows\\fonts\\malgun.ttf";
+117:             
+118:             if (AvailableFonts.TryGetValue(fontFamily, out string path)) {
+119:                 return path;
+120:             }
+121:             
+122:             foreach (var kvp in AvailableFonts) {
+123:                 if (kvp.Key.StartsWith(fontFamily, StringComparison.OrdinalIgnoreCase) ||
+124:                     fontFamily.StartsWith(kvp.Key, StringComparison.OrdinalIgnoreCase)) {
+125:                     return kvp.Value;
+126:                 }
+127:             }
+128:             
+129:             return "c:\\windows\\fonts\\malgun.ttf";
+130:         }
+131: 
+132:         public static void Load()
+133:         {
+134:             LoadAvailableFonts();
+135:             
+136:             var settings = Windows.Storage.ApplicationData.Current.LocalSettings;
+137:             if (settings.Values.ContainsKey("MouseDrawEnabled")) MouseDrawEnabled = (bool)settings.Values["MouseDrawEnabled"];
+138:             if (settings.Values.ContainsKey("ToolbarDockPosition")) ToolbarDockPosition = (string)settings.Values["ToolbarDockPosition"];
+139:             if (settings.Values.ContainsKey("ScrollMode")) ScrollMode = (string)settings.Values["ScrollMode"];
+140:             
+141:             for (int i = 0; i < 5; i++)
+142:             {
+143:                 if (settings.Values.ContainsKey($"PenColor_{i}"))
+144:                     PenColors[i] = new SolidColorBrush(ColorFromString((string)settings.Values[$"PenColor_{i}"]));
+145:                 if (settings.Values.ContainsKey($"PenThickness_{i}"))
+146:                     PenThicknesses[i] = (double)settings.Values[$"PenThickness_{i}"];
+147:                 if (settings.Values.ContainsKey($"PenStraightLine_{i}"))
+148:                     PenStraightLine[i] = (bool)settings.Values[$"PenStraightLine_{i}"];
+149:             }
+150:             for (int i = 0; i < 3; i++)
+151:             {
+152:                 if (settings.Values.ContainsKey($"HighlighterColor_{i}"))
+153:                     HighlighterColors[i] = new SolidColorBrush(ColorFromString((string)settings.Values[$"HighlighterColor_{i}"]));
+154:                 if (settings.Values.ContainsKey($"HighlighterThickness_{i}"))
+155:                     HighlighterThicknesses[i] = (double)settings.Values[$"HighlighterThickness_{i}"];
+156:                 if (settings.Values.ContainsKey($"HighlighterStraightLine_{i}"))
+157:                     HighlighterStraightLine[i] = (bool)settings.Values[$"HighlighterStraightLine_{i}"];
+158:             }
+159:             if (settings.Values.ContainsKey("TextColor"))
+160:                 TextColor = new SolidColorBrush(ColorFromString((string)settings.Values["TextColor"]));
+161:             if (settings.Values.ContainsKey("TextFontSize"))
+162:                 TextFontSize = (double)settings.Values["TextFontSize"];
+163:             if (settings.Values.ContainsKey("TextFontFamily"))
+164:                 TextFontFamily = (string)settings.Values["TextFontFamily"];
+165:             if (settings.Values.ContainsKey("TextHighlighterColor"))
+166:                 TextHighlighterColor = new SolidColorBrush(ColorFromString((string)settings.Values["TextHighlighterColor"]));
+167:         }
+168: 
+169:         public static void Save()
+170:         {
+171:             var settings = Windows.Storage.ApplicationData.Current.LocalSettings;
+172:             settings.Values["MouseDrawEnabled"] = MouseDrawEnabled;
+173:             settings.Values["ToolbarDockPosition"] = ToolbarDockPosition;
+174:             settings.Values["ScrollMode"] = ScrollMode;
+175:             for (int i = 0; i < 5; i++)
+176:             {
+177:                 settings.Values[$"PenColor_{i}"] = PenColors[i].Color.ToString();
+178:                 settings.Values[$"PenThickness_{i}"] = PenThicknesses[i];
+179:                 settings.Values[$"PenStraightLine_{i}"] = PenStraightLine[i];
+180:             }
+181:             for (int i = 0; i < 3; i++)
+182:             {
+183:                 settings.Values[$"HighlighterColor_{i}"] = HighlighterColors[i].Color.ToString();
+184:                 settings.Values[$"HighlighterThickness_{i}"] = HighlighterThicknesses[i];
+185:                 settings.Values[$"HighlighterStraightLine_{i}"] = HighlighterStraightLine[i];
+186:             }
+187:             settings.Values["TextColor"] = TextColor.Color.ToString();
+188:             settings.Values["TextFontSize"] = TextFontSize;
+189:             settings.Values["TextFontFamily"] = TextFontFamily;
+190:             settings.Values["TextHighlighterColor"] = TextHighlighterColor.Color.ToString();
+191:         }
+192: 
+193:         private static Windows.UI.Color ColorFromString(string hex)
+194:         {
+195:             hex = hex.Replace("#", string.Empty);
+196:             byte a = (byte)System.Convert.ToUInt32(hex.Substring(0, 2), 16);
+197:             byte r = (byte)System.Convert.ToUInt32(hex.Substring(2, 2), 16);
+198:             byte g = (byte)System.Convert.ToUInt32(hex.Substring(4, 2), 16);
+199:             byte b = (byte)System.Convert.ToUInt32(hex.Substring(6, 2), 16);
+200:             return Windows.UI.Color.FromArgb(a, r, g, b);
+201:         }
+202:     }
+203: 
+204:     public class PdfPageData
+205:     {
+206:         public uint PageIndex { get; set; }
+207:         public PdfDocument Document { get; set; }
+208:         public List<Polyline> Strokes { get; set; } = new List<Polyline>();
+209:         public List<ExtractedStroke> ExtractedStrokes { get; set; } = new List<ExtractedStroke>();
+210:         public List<Microsoft.UI.Xaml.Controls.TextBox> Texts { get; set; } = new List<Microsoft.UI.Xaml.Controls.TextBox>();
+211:         public List<PdfTextWord> Words { get; set; } = new List<PdfTextWord>();
+212:     }
+213: }
+214: 
+215: 
+216: namespace PDFaNoter
+217: {
+218:     public class ExtractedStroke
+219:     {
+220:         public Windows.UI.Color Color { get; set; }
+221:         public double Thickness { get; set; }
+222:         public List<Windows.Foundation.Point> Points { get; set; } = new List<Windows.Foundation.Point>();
+223:     }
+224: 
+225:     public class PdfTextWord
+226:     {
+227:         public string Text { get; set; }
+228:         public Windows.Foundation.Rect Bounds { get; set; }
+229:     }
+230: }
+231: 
+The above content shows the entire, complete file contents of the requested file.
+
+
+--- BLOCK 1 ---
+        public static void Load()
+        {
+            System.Threading.Tasks.Task.Run(() => LoadAvailableFonts());
+            
+            var settings = Windows.Storage.ApplicationData.Current.LocalSettings;
+
+--- BLOCK 2 ---
+Created At: 2026-09-21T18:35:23+09:00
+Completed At: 2026-09-21T18:35:24+09:00
+The following changes were made by the replace_file_content tool to: d:\Dev\PDFaNoter\PDFaNoter\ToolState.cs. If relevant, proactively run terminal commands to execute this code for the USER. Don't ask for permission.
+[diff_block_start]
+@@ -171,7 +171,7 @@
+ 
+         public static void Load()
+         {
+-            LoadAvailableFonts();
++            System.Threading.Tasks.Task.Run(() => LoadAvailableFonts());
+             
+             var settings = Windows.Storage.ApplicationData.Current.LocalSettings;
+             if (settings.Values.ContainsKey("MouseDrawEnabled")) MouseDrawEnabled = (bool)settings.Values["MouseDrawEnabled"];
+[diff_block_end]
+
+Please note that the above snippet only shows the MODIFIED lines from the last change. It shows up to 3 lines of unchanged lines before and after the modified lines. The actual file contents may have many more lines not shown.
+
