@@ -39,16 +39,25 @@ namespace PDFaNoter
 
         public async System.Threading.Tasks.Task OpenFileAsync(Windows.Storage.StorageFile file)
         {
-            var docView = new PdfDocumentView();
-            await docView.LoadPdfAsync(file);
-
-            var newTab = new TabViewItem
+            try
             {
-                Header = file.Name,
-                Content = docView
-            };
-            MainTabView.TabItems.Add(newTab);
-            MainTabView.SelectedItem = newTab;
+                var docView = new PdfDocumentView();
+                await docView.LoadPdfAsync(file);
+                var newTab = new TabViewItem { Header = file.Name, Content = docView };
+                MainTabView.TabItems.Add(newTab);
+                MainTabView.SelectedItem = newTab;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+                await new ContentDialog
+                {
+                    Title = "PDF open failed",
+                    Content = new ScrollViewer { Content = new TextBlock { Text = ex.ToString(), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true }, MaxHeight = 400 },
+                    CloseButtonText = "OK",
+                    XamlRoot = this.XamlRoot
+                }.ShowAsync();
+            }
         }
 
         private async void BtnOpen_Click(object sender, RoutedEventArgs e)

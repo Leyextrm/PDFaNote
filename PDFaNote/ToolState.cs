@@ -15,22 +15,13 @@ namespace PDFaNoter
         public static int CurrentPenSlot { get; set; } = 0;
         public static int CurrentHighlighterSlot { get; set; } = 0;
 
-        public static SolidColorBrush[] PenColors = new SolidColorBrush[5] 
-        {
-            new SolidColorBrush(Colors.Red),
-            new SolidColorBrush(Colors.Blue),
-            new SolidColorBrush(Colors.Black),
-            new SolidColorBrush(Colors.Green),
-            new SolidColorBrush(Colors.Purple)
-        };
+        // SolidColorBrush is a WinUI object and therefore has thread affinity. Do
+        // not create one from a static field initializer: this class is also used
+        // by the background font-discovery task.
+        public static SolidColorBrush[] PenColors = new SolidColorBrush[5];
         public static double[] PenThicknesses = new double[5] { 3, 3, 3, 3, 3 };
 
-        public static SolidColorBrush[] HighlighterColors = new SolidColorBrush[3]
-        {
-            new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(100, 255, 255, 0)),
-            new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(100, 0, 255, 0)),
-            new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(100, 0, 255, 255))
-        };
+        public static SolidColorBrush[] HighlighterColors = new SolidColorBrush[3];
         public static double[] HighlighterThicknesses = new double[3] { 15, 15, 15 };
 
         public static EraserType EraserMode { get; set; } = EraserType.Stroke;
@@ -77,14 +68,41 @@ namespace PDFaNoter
         public static SolidColorBrush HighlighterColor => HighlighterColors[CurrentHighlighterSlot];
         public static double HighlighterThickness => HighlighterThicknesses[CurrentHighlighterSlot];
         
-        public static SolidColorBrush TextHighlighterColor { get; set; } = new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(100, 255, 255, 0));
+        public static SolidColorBrush TextHighlighterColor { get; set; } = null!;
 
-        public static SolidColorBrush TextColor { get; set; } = new SolidColorBrush(Colors.Black);
+        public static SolidColorBrush TextColor { get; set; } = null!;
         public static double TextFontSize { get; set; } = 20;
         public static string TextFontFamily { get; set; } = "Malgun Gothic";
         
         public static Dictionary<string, string> AvailableFonts { get; } = new Dictionary<string, string>();
         public static System.Collections.ObjectModel.ObservableCollection<string> SupportedFonts { get; } = new System.Collections.ObjectModel.ObservableCollection<string>();
+
+        /// <summary>
+        /// Creates UI-thread-affine brush instances. Call only from the app's UI
+        /// thread before reading or writing one of the brush properties.
+        /// </summary>
+        public static void InitializeUiResources()
+        {
+            var defaultPenColors = new[] { Colors.Red, Colors.Blue, Colors.Black, Colors.Green, Colors.Purple };
+            for (int i = 0; i < PenColors.Length; i++)
+            {
+                PenColors[i] ??= new SolidColorBrush(defaultPenColors[i]);
+            }
+
+            var defaultHighlighterColors = new[]
+            {
+                Microsoft.UI.ColorHelper.FromArgb(100, 255, 255, 0),
+                Microsoft.UI.ColorHelper.FromArgb(100, 0, 255, 0),
+                Microsoft.UI.ColorHelper.FromArgb(100, 0, 255, 255)
+            };
+            for (int i = 0; i < HighlighterColors.Length; i++)
+            {
+                HighlighterColors[i] ??= new SolidColorBrush(defaultHighlighterColors[i]);
+            }
+
+            TextColor ??= new SolidColorBrush(Colors.Black);
+            TextHighlighterColor ??= new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(100, 255, 255, 0));
+        }
         
         public static void LoadAvailableFonts() {
             var tempFonts = new Dictionary<string, string>();
@@ -172,6 +190,7 @@ namespace PDFaNoter
 
         public static void Load()
         {
+            InitializeUiResources();
             System.Threading.Tasks.Task.Run(() => LoadAvailableFonts());
             
             var settings = Windows.Storage.ApplicationData.Current.LocalSettings;

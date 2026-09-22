@@ -30,6 +30,7 @@ namespace PDFaNoter
         public PdfDocumentView()
         {
             this.InitializeComponent();
+            ToolState.InitializeUiResources();
             // Range changes raise ValueChanged: finish setting up controls before accepting edits.
             var penSliders = new[] { PenThicknessSlider0, PenThicknessSlider1, PenThicknessSlider2, PenThicknessSlider3, PenThicknessSlider4 };
             for (int i = 0; i < penSliders.Length; i++)
