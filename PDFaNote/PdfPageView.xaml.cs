@@ -13,6 +13,8 @@ using Microsoft.UI.Input;
 
 namespace PDFaNoter
 {
+    public enum RenderTier { Preview, Normal, High }
+
     public sealed partial class PdfPageView : UserControl
     {
         private PdfPageData _pageData;
@@ -75,24 +77,68 @@ namespace PDFaNoter
 
         
 
+        // Limit expensive PDF rasterization across all open documents.  Requests
+        // that become stale while waiting are cancelled before they consume a slot.
         private static readonly System.Threading.SemaphoreSlim _renderLock = new(2, 2);
+        private System.Threading.CancellationTokenSource? _renderCancellation;
         private int _renderVersion;
         private uint _renderedWidth;
+        private uint _requestedWidth;
 
-        public async System.Threading.Tasks.Task UpdateRenderResolutionAsync(float zoomFactor)
+        public void RequestRender(float zoomFactor, RenderTier tier = RenderTier.Normal)
         {
+            if (!TryGetRenderDimensions(zoomFactor, tier, out uint width, out _)) return;
+            // ViewChanged can fire repeatedly with the same target resolution.
+            // Do not cancel useful work simply because scrolling continues.
+            if (_requestedWidth == width && _renderCancellation is { IsCancellationRequested: false }) return;
+            _renderCancellation?.Cancel();
+            _renderCancellation?.Dispose();
+            _renderCancellation = new System.Threading.CancellationTokenSource();
+            _requestedWidth = width;
+            _ = UpdateRenderResolutionAsync(zoomFactor, tier, _renderCancellation.Token);
+        }
+
+        public void ReleaseRenderCache()
+        {
+            _renderCancellation?.Cancel();
+            _renderVersion++;
+            _renderedWidth = 0;
+            _requestedWidth = 0;
+            PdfImage.Source = null;
+        }
+
+        private bool TryGetRenderDimensions(float zoomFactor, RenderTier tier, out uint width, out uint height)
+        {
+            width = 0;
+            height = 0;
             if (_pageData?.Document == null || BaseWidth <= 0 || BaseHeight <= 0 ||
-                !float.IsFinite(zoomFactor) || zoomFactor <= 0) return;
-            // Bound bitmap memory while preserving the page aspect ratio.
-            double scale = Math.Min(zoomFactor, Math.Min(8192.0 / Math.Max(BaseWidth, BaseHeight),
-                Math.Sqrt(16000000.0 / (BaseWidth * BaseHeight))));
-            uint width = (uint)Math.Max(1, Math.Ceiling(BaseWidth * scale));
-            uint height = (uint)Math.Max(1, Math.Ceiling(BaseHeight * scale));
+                !float.IsFinite(zoomFactor) || zoomFactor <= 0) return false;
+
+            double maxDimension = tier switch { RenderTier.High => 12288.0, RenderTier.Normal => 8192.0, _ => 2048.0 };
+            double maxPixels = tier switch { RenderTier.High => 32000000.0, RenderTier.Normal => 16000000.0, _ => 2000000.0 };
+            double scale = Math.Min(zoomFactor, Math.Min(maxDimension / Math.Max(BaseWidth, BaseHeight),
+                Math.Sqrt(maxPixels / (BaseWidth * BaseHeight))));
+            width = (uint)Math.Max(1, Math.Ceiling(BaseWidth * scale));
+            height = (uint)Math.Max(1, Math.Ceiling(BaseHeight * scale));
+            return true;
+        }
+
+        public async System.Threading.Tasks.Task UpdateRenderResolutionAsync(
+            float zoomFactor, RenderTier tier = RenderTier.Normal, System.Threading.CancellationToken cancellationToken = default)
+        {
+            if (!TryGetRenderDimensions(zoomFactor, tier, out uint width, out uint height)) return;
             int version = ++_renderVersion;
-            await _renderLock.WaitAsync();
             try
             {
-                if (version != _renderVersion || width == _renderedWidth) return;
+                await _renderLock.WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            try
+            {
+                if (cancellationToken.IsCancellationRequested || version != _renderVersion || _renderedWidth >= width) return;
                 using var pdfPage = _pageData.Document.GetPage(_pageData.PageIndex);
                 using var stream = new InMemoryRandomAccessStream();
                 await pdfPage.RenderToStreamAsync(stream, new PdfPageRenderOptions
@@ -100,11 +146,11 @@ namespace PDFaNoter
                     DestinationWidth = width,
                     DestinationHeight = height
                 });
-                if (version != _renderVersion) return;
+                if (cancellationToken.IsCancellationRequested || version != _renderVersion) return;
                 var bitmap = new BitmapImage();
                 stream.Seek(0);
                 await bitmap.SetSourceAsync(stream);
-                if (version != _renderVersion) return;
+                if (cancellationToken.IsCancellationRequested || version != _renderVersion) return;
                 PdfImage.Source = bitmap;
                 _renderedWidth = width;
             }
@@ -115,7 +161,7 @@ namespace PDFaNoter
             finally { _renderLock.Release(); }
         }
 
-        public async System.Threading.Tasks.Task LoadPageAsync(PdfPageData data, CommandHistory history)
+        public async System.Threading.Tasks.Task LoadPageAsync(PdfPageData data, CommandHistory history, bool renderPreview = true)
         {
             _pageData = data;
             _history = history;
@@ -212,7 +258,8 @@ namespace PDFaNoter
                 BaseHeight = pdfPage.Size.Height * 2;
 
                 _renderedWidth = 0;
-                await UpdateRenderResolutionAsync((float)Math.Min(1.0, 800.0 / BaseWidth));
+                if (renderPreview)
+                    await UpdateRenderResolutionAsync((float)Math.Min(1.0, 800.0 / BaseWidth));
 
                 InkCanvas.Width = BaseWidth;
                 InkCanvas.Height = BaseHeight;

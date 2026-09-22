@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using Windows.Data.Pdf;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -109,7 +110,12 @@ namespace PDFaNoter
                         }
                     }
                 }
-            } catch { }
+            }
+            catch (Exception ex)
+            {
+                // Text selection remains optional, but failures should be diagnosable.
+                System.Diagnostics.Debug.WriteLine($"PDF text extraction failed: {ex}");
+            }
 
             var memStream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
             var extractedTextsDict = new System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<ExtractedTextAnnotation>>();
@@ -240,6 +246,8 @@ namespace PDFaNoter
                         {
                             page.RemoveAnnotation(annot);
                         }
+
+                        FlattenExternalAnnotationsForRendering(page, annots, annotsToRemove);
                     }
                     extractedStrokesDict[i - 1] = extractedStrokes;
                     extractedTextsDict[i - 1] = extractedTextAnnotations;
@@ -269,7 +277,9 @@ namespace PDFaNoter
                     pageData.Words = wordsList;
                 }
                 var pageView = new PdfPageView();
-                await pageView.LoadPageAsync(pageData, History);
+                // Show the first page immediately. Other pages receive a render
+                // request only when they approach the viewport.
+                await pageView.LoadPageAsync(pageData, History, renderPreview: i == 0);
                 _pages.Add(pageView);
 
             }
@@ -282,6 +292,7 @@ namespace PDFaNoter
         public async Task SaveAsync(Windows.Storage.StorageFile destFile, bool updateSourceFile = true)
         {
             if (_workingFile == null) return;
+            if (destFile == null) throw new ArgumentNullException(nameof(destFile));
 
             // 1. Read entire source file into memory and close handle immediately
             byte[] sourceBytes;
@@ -551,18 +562,30 @@ namespace PDFaNoter
                 outputBytes = outMs.ToArray();
             }
 
-            // 3. Write directly to destFile without temporary cross-volume moves
-            using (var destStream = await destFile.OpenStreamForWriteAsync())
+            // 3. Write a complete sibling file, then replace the destination.
+            // Truncating the original first risks permanent data loss on a failed write.
+            var parent = await destFile.GetParentAsync();
+            if (parent == null) throw new IOException("The destination folder is unavailable.");
+            var temporaryFile = await parent.CreateFileAsync(
+                $".{destFile.Name}.{Guid.NewGuid():N}.tmp", Windows.Storage.CreationCollisionOption.FailIfExists);
+            try
             {
-                destStream.SetLength(0);
-                await destStream.WriteAsync(outputBytes, 0, outputBytes.Length);
-                await destStream.FlushAsync();
+                using (var destStream = await temporaryFile.OpenStreamForWriteAsync())
+                {
+                    await destStream.WriteAsync(outputBytes, 0, outputBytes.Length);
+                    await destStream.FlushAsync();
+                }
+                await temporaryFile.CopyAndReplaceAsync(destFile);
+            }
+            finally
+            {
+                try { await temporaryFile.DeleteAsync(); } catch { }
             }
             
             if (updateSourceFile)
             {
                 _sourceFile = destFile;
-                History.HasUnsavedChanges = false;
+                History.MarkSaved();
             }
             _workingFile = destFile;
         }
@@ -682,6 +705,43 @@ namespace PDFaNoter
         }
         
         private void MenuMouseDraw_Click(object sender, RoutedEventArgs e) { ToolState.MouseDrawEnabled = MenuMouseDraw.IsChecked; ToolState.Save(); }
+
+        // Windows.Data.Pdf does not consistently paint PDF annotation appearances.
+        // This changes only the disposable in-memory render copy; SaveAsync always
+        // starts from the original file, so external annotation data is preserved.
+        private static void FlattenExternalAnnotationsForRendering(
+            iText.Kernel.Pdf.PdfPage page,
+            IList<iText.Kernel.Pdf.Annot.PdfAnnotation> annotations,
+            IList<iText.Kernel.Pdf.Annot.PdfAnnotation> pdfaNoteAnnotations)
+        {
+            var renderCanvas = new iText.Kernel.Pdf.Canvas.PdfCanvas(page);
+            foreach (var annotation in annotations)
+            {
+                if (pdfaNoteAnnotations.Contains(annotation)) continue;
+                try
+                {
+                    var appearance = annotation.GetPdfObject().GetAsDictionary(iText.Kernel.Pdf.PdfName.AP);
+                    var normalAppearance = appearance?.GetAsStream(iText.Kernel.Pdf.PdfName.N);
+                    var rect = annotation.GetRectangle();
+                    if (normalAppearance == null || rect == null || rect.Size() < 4) continue;
+
+                    float left = rect.GetAsNumber(0).FloatValue();
+                    float bottom = rect.GetAsNumber(1).FloatValue();
+                    float right = rect.GetAsNumber(2).FloatValue();
+                    float top = rect.GetAsNumber(3).FloatValue();
+                    var bounds = new iText.Kernel.Geom.Rectangle(left, bottom, right - left, top - bottom);
+                    renderCanvas.AddXObjectFittedIntoRectangle(
+                        new iText.Kernel.Pdf.Xobject.PdfFormXObject(normalAppearance), bounds);
+                    page.RemoveAnnotation(annotation);
+                }
+                catch (Exception ex)
+                {
+                    // Keep the original annotation in the render copy if it has an
+                    // unsupported appearance rather than losing it silently.
+                    System.Diagnostics.Debug.WriteLine($"Annotation render fallback failed: {ex}");
+                }
+            }
+        }
 
         private void ApplyToolbarDockPosition(string pos)
         {
@@ -940,17 +1000,40 @@ namespace PDFaNoter
                 _renderTimer.Tick += (_, _) =>
                 {
                     _renderTimer.Stop();
-                    foreach (var page in _pages)
+                    var candidates = new List<(PdfPageView Page, int Index, double Distance)>();
+                    for (int index = 0; index < _pages.Count; index++)
                     {
+                        var page = _pages[index];
                         if (page.ActualWidth <= 0 || page.BaseWidth <= 0) continue;
                         var bounds = page.TransformToVisual(PdfScrollViewer).TransformBounds(
                             new Windows.Foundation.Rect(0, 0, page.ActualWidth, page.ActualHeight));
-                        bool visible = bounds.Bottom > -200 && bounds.Top < PdfScrollViewer.ActualHeight + 200 &&
-                                       bounds.Right > -200 && bounds.Left < PdfScrollViewer.ActualWidth + 200;
-                        double scale = visible
-                            ? page.ActualWidth / page.BaseWidth * PdfScrollViewer.ZoomFactor * (XamlRoot?.RasterizationScale ?? 1.0)
-                            : Math.Min(1.0, 800.0 / page.BaseWidth);
-                        _ = page.UpdateRenderResolutionAsync((float)scale);
+                        var viewportCenter = ToolState.ScrollMode == "Horizontal"
+                            ? PdfScrollViewer.ActualWidth / 2 : PdfScrollViewer.ActualHeight / 2;
+                        var pageCenter = ToolState.ScrollMode == "Horizontal"
+                            ? (bounds.Left + bounds.Right) / 2 : (bounds.Top + bounds.Bottom) / 2;
+                        candidates.Add((page, index, Math.Abs(pageCenter - viewportCenter)));
+                    }
+
+                    if (candidates.Count == 0) return;
+                    int currentIndex = candidates.MinBy(x => x.Distance).Index;
+                    // Current page: high; ±3 pages: normal; then ±10 more: preview.
+                    // Rendering the tiers in this order keeps rapid scrolling responsive.
+                    foreach (var candidate in candidates.OrderBy(x => Math.Abs(x.Index - currentIndex)))
+                    {
+                        int pageDistance = Math.Abs(candidate.Index - currentIndex);
+                        if (pageDistance > 13)
+                        {
+                            candidate.Page.ReleaseRenderCache();
+                            continue;
+                        }
+                        double displayScale = candidate.Page.ActualWidth / candidate.Page.BaseWidth *
+                            PdfScrollViewer.ZoomFactor * (XamlRoot?.RasterizationScale ?? 1.0);
+                        if (pageDistance == 0)
+                            candidate.Page.RequestRender((float)displayScale, RenderTier.High);
+                        else if (pageDistance <= 3)
+                            candidate.Page.RequestRender((float)displayScale, RenderTier.Normal);
+                        else
+                            candidate.Page.RequestRender((float)Math.Min(1.0, 1024.0 / candidate.Page.BaseWidth), RenderTier.Preview);
                     }
                 };
             }

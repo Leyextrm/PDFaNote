@@ -206,8 +206,8 @@
 
                 <Border Tag="ToolbarSeparator" Width="1" Height="20" Background="{ThemeResource DividerStrokeColorDefaultBrush}" VerticalAlignment="Center" Margin="2,4" />
                 
-                <ToggleButton x:Name="BtnStraightLine" Content="&#xE108;" FontFamily="Segoe Fluent Icons" ToolTipService.ToolTip="선 (Straight Line)" Click="ToggleOption_Click" />
-                <ToggleButton x:Name="BtnSnapToText" Content="&#xE8AC;" FontFamily="Segoe Fluent Icons" ToolTipService.ToolTip="텍스트에 스냅 (Snap to Text)" Click="ToggleOption_Click" />
+                <ToggleButton x:Name="BtnStraightLine" Content="&#xE108;" FontFamily="Segoe Fluent Icons" ToolTipService.ToolTip="Straight Line" Click="ToggleOption_Click" />
+                <ToggleButton x:Name="BtnSnapToText" Content="&#xE8AC;" FontFamily="Segoe Fluent Icons" ToolTipService.ToolTip="Snap to Text" Click="ToggleOption_Click" />
                 
                 <Border Tag="ToolbarSeparator" Width="1" Height="20" Background="{ThemeResource DividerStrokeColorDefaultBrush}" VerticalAlignment="Center" Margin="2,4" />
                 

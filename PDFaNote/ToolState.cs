@@ -35,12 +35,14 @@ namespace PDFaNoter
         { 
             get 
             {
-                if (CurrentMode == ToolMode.Highlighter) return HighlighterSnapToText[CurrentHighlighterSlot];
+                if (CurrentMode == ToolMode.Highlighter || CurrentMode == ToolMode.TextHighlighter)
+                    return HighlighterSnapToText[CurrentHighlighterSlot];
                 return false;
             }
             set
             {
-                if (CurrentMode == ToolMode.Highlighter) HighlighterSnapToText[CurrentHighlighterSlot] = value;
+                if (CurrentMode == ToolMode.Highlighter || CurrentMode == ToolMode.TextHighlighter)
+                    HighlighterSnapToText[CurrentHighlighterSlot] = value;
             }
         }
         
@@ -130,7 +132,11 @@ namespace PDFaNoter
                         }
                     }
                 }
-            } catch { }
+            }
+            catch (System.Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Font discovery failed: {ex}");
+            }
             
             if (tempFonts.Count == 0) {
                 tempFonts["Malgun Gothic"] = "c:\\windows\\fonts\\malgun.ttf";
@@ -197,6 +203,8 @@ namespace PDFaNoter
             if (settings.Values.ContainsKey("MouseDrawEnabled")) MouseDrawEnabled = (bool)settings.Values["MouseDrawEnabled"];
             if (settings.Values.ContainsKey("ToolbarDockPosition")) ToolbarDockPosition = (string)settings.Values["ToolbarDockPosition"];
             if (settings.Values.ContainsKey("ScrollMode")) ScrollMode = (string)settings.Values["ScrollMode"];
+            if (settings.Values.ContainsKey("EraserMode")) EraserMode = (EraserType)(int)settings.Values["EraserMode"];
+            if (settings.Values.ContainsKey("EraserThickness")) EraserThickness = (double)settings.Values["EraserThickness"];
             
             for (int i = 0; i < 5; i++)
             {
@@ -215,6 +223,8 @@ namespace PDFaNoter
                     HighlighterThicknesses[i] = (double)settings.Values[$"HighlighterThickness_{i}"];
                 if (settings.Values.ContainsKey($"HighlighterStraightLine_{i}"))
                     HighlighterStraightLine[i] = (bool)settings.Values[$"HighlighterStraightLine_{i}"];
+                if (settings.Values.ContainsKey($"HighlighterSnapToText_{i}"))
+                    HighlighterSnapToText[i] = (bool)settings.Values[$"HighlighterSnapToText_{i}"];
             }
             if (settings.Values.ContainsKey("TextColor"))
                 TextColor = new SolidColorBrush(ColorFromString((string)settings.Values["TextColor"]));
@@ -232,6 +242,8 @@ namespace PDFaNoter
             settings.Values["MouseDrawEnabled"] = MouseDrawEnabled;
             settings.Values["ToolbarDockPosition"] = ToolbarDockPosition;
             settings.Values["ScrollMode"] = ScrollMode;
+            settings.Values["EraserMode"] = (int)EraserMode;
+            settings.Values["EraserThickness"] = EraserThickness;
             for (int i = 0; i < 5; i++)
             {
                 settings.Values[$"PenColor_{i}"] = PenColors[i].Color.ToString();
@@ -243,6 +255,7 @@ namespace PDFaNoter
                 settings.Values[$"HighlighterColor_{i}"] = HighlighterColors[i].Color.ToString();
                 settings.Values[$"HighlighterThickness_{i}"] = HighlighterThicknesses[i];
                 settings.Values[$"HighlighterStraightLine_{i}"] = HighlighterStraightLine[i];
+                settings.Values[$"HighlighterSnapToText_{i}"] = HighlighterSnapToText[i];
             }
             settings.Values["TextColor"] = TextColor.Color.ToString();
             settings.Values["TextFontSize"] = TextFontSize;

@@ -25,14 +25,14 @@ https://github.com/Leyextrm/PDFaNote
 ### How to Build
 
 1. **Restore NuGet dependencies:**
-   `cmd
+   ```cmd
    dotnet restore
-   `
+   ```
 
 2. **Build the project in Release mode:**
-   `cmd
+   ```cmd
    dotnet build -c Release
-   `
+   ```
    
    *Alternatively, you can open PDFaNote/PDFaNoter.slnx in Visual Studio 2022 and build from the IDE.*
 

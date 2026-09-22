@@ -160,26 +160,50 @@ namespace PDFaNoter
     }
     public class CommandHistory
     {
-        private Stack<IUndoableCommand> _undoStack = new Stack<IUndoableCommand>();
-        private Stack<IUndoableCommand> _redoStack = new Stack<IUndoableCommand>();
+        private sealed class HistoryEntry
+        {
+            public IUndoableCommand Command { get; }
+            public long BeforeRevision { get; }
+            public long AfterRevision { get; }
+
+            public HistoryEntry(IUndoableCommand command, long beforeRevision, long afterRevision)
+            {
+                Command = command;
+                BeforeRevision = beforeRevision;
+                AfterRevision = afterRevision;
+            }
+        }
+
+        private Stack<HistoryEntry> _undoStack = new Stack<HistoryEntry>();
+        private Stack<HistoryEntry> _redoStack = new Stack<HistoryEntry>();
         
-        public bool HasUnsavedChanges { get; set; } = false;
+        // A document is clean only when its current history position matches the
+        // position recorded after the last successful save.  A boolean cannot
+        // represent "undo back to the saved state".
+        private long _revision;
+        private long _savedRevision;
+        private long _nextRevision;
+
+        public bool HasUnsavedChanges => _revision != _savedRevision;
+
+        public void MarkSaved() => _savedRevision = _revision;
 
         public void Add(IUndoableCommand command)
         {
-            _undoStack.Push(command);
+            var entry = new HistoryEntry(command, _revision, ++_nextRevision);
+            _undoStack.Push(entry);
             _redoStack.Clear();
-            HasUnsavedChanges = true;
+            _revision = entry.AfterRevision;
         }
 
         public void Undo()
         {
             if (_undoStack.Count > 0)
             {
-                var cmd = _undoStack.Pop();
-                cmd.Undo();
-                _redoStack.Push(cmd);
-                HasUnsavedChanges = true;
+                var entry = _undoStack.Pop();
+                entry.Command.Undo();
+                _redoStack.Push(entry);
+                _revision = entry.BeforeRevision;
             }
         }
 
@@ -187,10 +211,10 @@ namespace PDFaNoter
         {
             if (_redoStack.Count > 0)
             {
-                var cmd = _redoStack.Pop();
-                cmd.Redo();
-                _undoStack.Push(cmd);
-                HasUnsavedChanges = true;
+                var entry = _redoStack.Pop();
+                entry.Command.Redo();
+                _undoStack.Push(entry);
+                _revision = entry.AfterRevision;
             }
         }
     }

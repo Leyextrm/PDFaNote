@@ -1,0 +1,6 @@
+/.vs/
+**/bin/
+**/obj/
+**/AppPackages/
+*.log
+crash_log.txt
