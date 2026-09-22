@@ -25,10 +25,19 @@ namespace PDFaNoter
         private List<ToggleButton> _highlighterButtons;
         private int _currentPageNumber = 1;
         private DispatcherTimer? _pageToastTimer;
+        private bool _controlsInitialized;
 
         public PdfDocumentView()
         {
             this.InitializeComponent();
+            // Range changes raise ValueChanged: finish setting up controls before accepting edits.
+            var penSliders = new[] { PenThicknessSlider0, PenThicknessSlider1, PenThicknessSlider2, PenThicknessSlider3, PenThicknessSlider4 };
+            for (int i = 0; i < penSliders.Length; i++)
+                InitializeSlider(penSliders[i], 1, 20, ToolState.PenThicknesses[i]);
+            var highlighterSliders = new[] { HighlighterThicknessSlider0, HighlighterThicknessSlider1, HighlighterThicknessSlider2 };
+            for (int i = 0; i < highlighterSliders.Length; i++)
+                InitializeSlider(highlighterSliders[i], 5, 50, ToolState.HighlighterThicknesses[i]);
+            InitializeSlider(EraserThicknessSlider, 5, 100, ToolState.EraserThickness);
             PdfPagesControl.ItemsSource = _pages;
             Loaded += (_, _) =>
             {
@@ -64,6 +73,14 @@ namespace PDFaNoter
             MenuMouseDraw.IsChecked = ToolState.MouseDrawEnabled;
 
             UpdateToolSelection();
+            _controlsInitialized = true;
+        }
+
+        private static void InitializeSlider(Slider slider, double minimum, double maximum, double value)
+        {
+            slider.Maximum = maximum;
+            slider.Minimum = minimum;
+            slider.Value = double.IsFinite(value) ? Math.Clamp(value, minimum, maximum) : minimum;
         }
 
         public async Task LoadPdfAsync(Windows.Storage.StorageFile file, bool isReload = false)
@@ -736,6 +753,7 @@ namespace PDFaNoter
 
         private void PenThicknessSlider_Changed(object sender, RangeBaseValueChangedEventArgs args)
         {
+            if (!_controlsInitialized) return;
             if (sender is Slider slider && slider.Tag != null && !double.IsNaN(args.NewValue))
             {
                 int index = int.Parse(slider.Tag.ToString());
@@ -757,6 +775,7 @@ namespace PDFaNoter
 
         private void PenThickness_Changed(NumberBox sender, NumberBoxValueChangedEventArgs args)
         {
+            if (!_controlsInitialized) return;
             if (sender.Tag != null && !double.IsNaN(args.NewValue))
             {
                 int index = int.Parse(sender.Tag.ToString());
@@ -778,6 +797,7 @@ namespace PDFaNoter
 
         private void HighlighterThicknessSlider_Changed(object sender, RangeBaseValueChangedEventArgs args)
         {
+            if (!_controlsInitialized) return;
             if (sender is Slider slider && slider.Tag != null && !double.IsNaN(args.NewValue))
             {
                 int index = int.Parse(slider.Tag.ToString());
@@ -799,6 +819,7 @@ namespace PDFaNoter
 
         private void HighlighterThickness_Changed(NumberBox sender, NumberBoxValueChangedEventArgs args)
         {
+            if (!_controlsInitialized) return;
             if (sender.Tag != null && !double.IsNaN(args.NewValue))
             {
                 int index = int.Parse(sender.Tag.ToString());
@@ -911,6 +932,7 @@ namespace PDFaNoter
 
         private void ScheduleRender()
         {
+            if (!_controlsInitialized || !IsLoaded) return;
             if (_renderTimer == null)
             {
                 _renderTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
@@ -937,6 +959,7 @@ namespace PDFaNoter
 
         private void PdfScrollViewer_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)
         {
+            if (!_controlsInitialized) return;
             if (Math.Abs(_previousZoom - PdfScrollViewer.ZoomFactor) > 0.001f)
                 _isFitToWidth = false;
             _previousZoom = PdfScrollViewer.ZoomFactor;
@@ -1036,6 +1059,7 @@ namespace PDFaNoter
 
         private void TextFontSize_Changed(NumberBox sender, NumberBoxValueChangedEventArgs args)
         {
+            if (!_controlsInitialized) return;
             if (!double.IsNaN(args.NewValue))
             {
                 ToolState.TextFontSize = args.NewValue;
@@ -1045,6 +1069,7 @@ namespace PDFaNoter
 
         private void TextFontFamily_Changed(object sender, SelectionChangedEventArgs e)
         {
+            if (!_controlsInitialized) return;
             if (TextFontFamilyCombo.SelectedItem != null)
             {
                 ToolState.TextFontFamily = TextFontFamilyCombo.SelectedItem.ToString();
@@ -1054,21 +1079,28 @@ namespace PDFaNoter
 
         private void TextColor_Changed(Microsoft.UI.Xaml.Controls.ColorPicker sender, Microsoft.UI.Xaml.Controls.ColorChangedEventArgs args)
         {
+            if (!_controlsInitialized) return;
             ToolState.TextColor = new SolidColorBrush(args.NewColor);
             if (IndText != null) IndText.Background = ToolState.TextColor;
             ToolState.Save();
         }
 
-        private void EraserThickness_Changed(object sender, RangeBaseValueChangedEventArgs e) { ToolState.EraserThickness = e.NewValue; }
+        private void EraserThickness_Changed(object sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (!_controlsInitialized) return;
+            ToolState.EraserThickness = e.NewValue;
+        }
         
         private void EraserType_Changed(object sender, SelectionChangedEventArgs e)
         {
+            if (!_controlsInitialized) return;
             if (EraserTypeCombo.SelectedIndex == 0) ToolState.EraserMode = EraserType.Stroke;
             else ToolState.EraserMode = EraserType.Pixel;
         }
 
         private void PenColor_Changed(Microsoft.UI.Xaml.Controls.ColorPicker sender, Microsoft.UI.Xaml.Controls.ColorChangedEventArgs args)
         {
+            if (!_controlsInitialized) return;
             if (sender.Tag != null)
             {
                 int index = int.Parse(sender.Tag.ToString());
@@ -1081,6 +1113,7 @@ namespace PDFaNoter
 
         private void HighlighterColor_Changed(Microsoft.UI.Xaml.Controls.ColorPicker sender, Microsoft.UI.Xaml.Controls.ColorChangedEventArgs args)
         {
+            if (!_controlsInitialized) return;
             if (sender.Tag != null)
             {
                 int index = int.Parse(sender.Tag.ToString());
@@ -1211,6 +1244,7 @@ namespace PDFaNoter
 
                 private void PdfScrollViewer_SizeChanged(object sender, SizeChangedEventArgs e)
         {
+            if (!_controlsInitialized) return;
             UpdateContainerSize();
             ScheduleRender();
             if (_isFitToWidth && e.NewSize.Width > 0)

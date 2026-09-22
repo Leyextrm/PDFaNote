@@ -68,7 +68,7 @@
                             <StackPanel Spacing="8" Width="260">
                                 <TextBlock Text="Thickness (1-20)" FontWeight="SemiBold" />
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                    <Slider Tag="0" Minimum="1" Maximum="20" StepFrequency="0.5" SnapsTo="StepValues" Value="2" ValueChanged="PenThicknessSlider_Changed" VerticalAlignment="Center" />
+                                    <Slider x:Name="PenThicknessSlider0" Tag="0" StepFrequency="0.5" SnapsTo="StepValues" ValueChanged="PenThicknessSlider_Changed" VerticalAlignment="Center" />
                                     <NumberBox Grid.Column="1" Tag="0" Width="85" Minimum="1" Maximum="20" Value="2" SpinButtonPlacementMode="Inline" PreventKeyboardDisplayOnProgrammaticFocus="True" ValueChanged="PenThickness_Changed" VerticalAlignment="Center" />
                                 </Grid>
                                 <ColorPicker Tag="0" ColorChanged="PenColor_Changed" IsMoreButtonVisible="False" IsColorSpectrumVisible="True" IsColorChannelTextInputVisible="True" IsHexInputVisible="True" IsAlphaEnabled="False" />
@@ -83,7 +83,7 @@
                             <StackPanel Spacing="8" Width="260">
                                 <TextBlock Text="Thickness (1-20)" FontWeight="SemiBold" />
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                    <Slider Tag="1" Minimum="1" Maximum="20" StepFrequency="0.5" SnapsTo="StepValues" Value="2" ValueChanged="PenThicknessSlider_Changed" VerticalAlignment="Center" />
+                                    <Slider x:Name="PenThicknessSlider1" Tag="1" StepFrequency="0.5" SnapsTo="StepValues" ValueChanged="PenThicknessSlider_Changed" VerticalAlignment="Center" />
                                     <NumberBox Grid.Column="1" Tag="1" Width="85" Minimum="1" Maximum="20" Value="2" SpinButtonPlacementMode="Inline" PreventKeyboardDisplayOnProgrammaticFocus="True" ValueChanged="PenThickness_Changed" VerticalAlignment="Center" />
                                 </Grid>
                                 <ColorPicker Tag="1" ColorChanged="PenColor_Changed" IsMoreButtonVisible="False" IsColorSpectrumVisible="True" IsColorChannelTextInputVisible="True" IsHexInputVisible="True" IsAlphaEnabled="False" />
@@ -98,7 +98,7 @@
                             <StackPanel Spacing="8" Width="260">
                                 <TextBlock Text="Thickness (1-20)" FontWeight="SemiBold" />
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                    <Slider Tag="2" Minimum="1" Maximum="20" StepFrequency="0.5" SnapsTo="StepValues" Value="2" ValueChanged="PenThicknessSlider_Changed" VerticalAlignment="Center" />
+                                    <Slider x:Name="PenThicknessSlider2" Tag="2" StepFrequency="0.5" SnapsTo="StepValues" ValueChanged="PenThicknessSlider_Changed" VerticalAlignment="Center" />
                                     <NumberBox Grid.Column="1" Tag="2" Width="85" Minimum="1" Maximum="20" Value="2" SpinButtonPlacementMode="Inline" PreventKeyboardDisplayOnProgrammaticFocus="True" ValueChanged="PenThickness_Changed" VerticalAlignment="Center" />
                                 </Grid>
                                 <ColorPicker Tag="2" ColorChanged="PenColor_Changed" IsMoreButtonVisible="False" IsColorSpectrumVisible="True" IsColorChannelTextInputVisible="True" IsHexInputVisible="True" IsAlphaEnabled="False" />
@@ -113,7 +113,7 @@
                             <StackPanel Spacing="8" Width="260">
                                 <TextBlock Text="Thickness (1-20)" FontWeight="SemiBold" />
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                    <Slider Tag="3" Minimum="1" Maximum="20" StepFrequency="0.5" SnapsTo="StepValues" Value="2" ValueChanged="PenThicknessSlider_Changed" VerticalAlignment="Center" />
+                                    <Slider x:Name="PenThicknessSlider3" Tag="3" StepFrequency="0.5" SnapsTo="StepValues" ValueChanged="PenThicknessSlider_Changed" VerticalAlignment="Center" />
                                     <NumberBox Grid.Column="1" Tag="3" Width="85" Minimum="1" Maximum="20" Value="2" SpinButtonPlacementMode="Inline" PreventKeyboardDisplayOnProgrammaticFocus="True" ValueChanged="PenThickness_Changed" VerticalAlignment="Center" />
                                 </Grid>
                                 <ColorPicker Tag="3" ColorChanged="PenColor_Changed" IsMoreButtonVisible="False" IsColorSpectrumVisible="True" IsColorChannelTextInputVisible="True" IsHexInputVisible="True" IsAlphaEnabled="False" />
@@ -128,7 +128,7 @@
                             <StackPanel Spacing="8" Width="260">
                                 <TextBlock Text="Thickness (1-20)" FontWeight="SemiBold" />
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                    <Slider Tag="4" Minimum="1" Maximum="20" StepFrequency="0.5" SnapsTo="StepValues" Value="2" ValueChanged="PenThicknessSlider_Changed" VerticalAlignment="Center" />
+                                    <Slider x:Name="PenThicknessSlider4" Tag="4" StepFrequency="0.5" SnapsTo="StepValues" ValueChanged="PenThicknessSlider_Changed" VerticalAlignment="Center" />
                                     <NumberBox Grid.Column="1" Tag="4" Width="85" Minimum="1" Maximum="20" Value="2" SpinButtonPlacementMode="Inline" PreventKeyboardDisplayOnProgrammaticFocus="True" ValueChanged="PenThickness_Changed" VerticalAlignment="Center" />
                                 </Grid>
                                 <ColorPicker Tag="4" ColorChanged="PenColor_Changed" IsMoreButtonVisible="False" IsColorSpectrumVisible="True" IsColorChannelTextInputVisible="True" IsHexInputVisible="True" IsAlphaEnabled="False" />
@@ -146,7 +146,7 @@
                             <StackPanel Spacing="8" Width="260">
                                 <TextBlock Text="Thickness (5-50)" FontWeight="SemiBold" />
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                    <Slider Tag="0" Minimum="5" Maximum="50" StepFrequency="1" SnapsTo="StepValues" Value="15" ValueChanged="HighlighterThicknessSlider_Changed" VerticalAlignment="Center" />
+                                    <Slider x:Name="HighlighterThicknessSlider0" Tag="0" StepFrequency="1" SnapsTo="StepValues" ValueChanged="HighlighterThicknessSlider_Changed" VerticalAlignment="Center" />
                                     <NumberBox Grid.Column="1" Tag="0" Width="85" Minimum="5" Maximum="50" Value="15" SpinButtonPlacementMode="Inline" PreventKeyboardDisplayOnProgrammaticFocus="True" ValueChanged="HighlighterThickness_Changed" VerticalAlignment="Center" />
                                 </Grid>
                                 <ColorPicker Tag="0" ColorChanged="HighlighterColor_Changed" IsMoreButtonVisible="False" IsColorSpectrumVisible="True" IsColorChannelTextInputVisible="True" IsHexInputVisible="True" IsAlphaSliderVisible="True" IsAlphaEnabled="True" />
@@ -161,7 +161,7 @@
                             <StackPanel Spacing="8" Width="260">
                                 <TextBlock Text="Thickness (5-50)" FontWeight="SemiBold" />
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                    <Slider Tag="1" Minimum="5" Maximum="50" StepFrequency="1" SnapsTo="StepValues" Value="15" ValueChanged="HighlighterThicknessSlider_Changed" VerticalAlignment="Center" />
+                                    <Slider x:Name="HighlighterThicknessSlider1" Tag="1" StepFrequency="1" SnapsTo="StepValues" ValueChanged="HighlighterThicknessSlider_Changed" VerticalAlignment="Center" />
                                     <NumberBox Grid.Column="1" Tag="1" Width="85" Minimum="5" Maximum="50" Value="15" SpinButtonPlacementMode="Inline" PreventKeyboardDisplayOnProgrammaticFocus="True" ValueChanged="HighlighterThickness_Changed" VerticalAlignment="Center" />
                                 </Grid>
                                 <ColorPicker Tag="1" ColorChanged="HighlighterColor_Changed" IsMoreButtonVisible="False" IsColorSpectrumVisible="True" IsColorChannelTextInputVisible="True" IsHexInputVisible="True" IsAlphaSliderVisible="True" IsAlphaEnabled="True" />
@@ -176,7 +176,7 @@
                             <StackPanel Spacing="8" Width="260">
                                 <TextBlock Text="Thickness (5-50)" FontWeight="SemiBold" />
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                    <Slider Tag="2" Minimum="5" Maximum="50" StepFrequency="1" SnapsTo="StepValues" Value="15" ValueChanged="HighlighterThicknessSlider_Changed" VerticalAlignment="Center" />
+                                    <Slider x:Name="HighlighterThicknessSlider2" Tag="2" StepFrequency="1" SnapsTo="StepValues" ValueChanged="HighlighterThicknessSlider_Changed" VerticalAlignment="Center" />
                                     <NumberBox Grid.Column="1" Tag="2" Width="85" Minimum="5" Maximum="50" Value="15" SpinButtonPlacementMode="Inline" PreventKeyboardDisplayOnProgrammaticFocus="True" ValueChanged="HighlighterThickness_Changed" VerticalAlignment="Center" />
                                 </Grid>
                                 <ColorPicker Tag="2" ColorChanged="HighlighterColor_Changed" IsMoreButtonVisible="False" IsColorSpectrumVisible="True" IsColorChannelTextInputVisible="True" IsHexInputVisible="True" IsAlphaSliderVisible="True" IsAlphaEnabled="True" />
@@ -197,7 +197,7 @@
                                     <ComboBoxItem Content="Stroke Eraser" />
                                     <ComboBoxItem Content="Pixel Eraser" />
                                 </ComboBox>
-                                <Slider Header="Size (Pixel Mode)" Minimum="5" Maximum="100" Value="10" ValueChanged="EraserThickness_Changed" />
+                                <Slider x:Name="EraserThicknessSlider" Header="Size (Pixel Mode)" ValueChanged="EraserThickness_Changed" />
                             </StackPanel>
                         </Flyout>
                     </ToggleButton.ContextFlyout>
