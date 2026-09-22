@@ -34,7 +34,7 @@ https://github.com/Leyextrm/PDFaNote
    dotnet build -c Release
    `
    
-   *Alternatively, you can open PDFaNoter/PDFaNoter.slnx in Visual Studio 2022 and build from the IDE.*
+   *Alternatively, you can open PDFaNote/PDFaNoter.slnx in Visual Studio 2022 and build from the IDE.*
 
 ## Privacy Policy
 PDFaNote is a local desktop application. It does not collect, store, or transmit any personal data, telemetry, or user files to any external servers. All processing is done locally on your device.

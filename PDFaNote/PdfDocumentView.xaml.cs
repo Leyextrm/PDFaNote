@@ -30,6 +30,17 @@ namespace PDFaNoter
         {
             this.InitializeComponent();
             PdfPagesControl.ItemsSource = _pages;
+            Loaded += (_, _) =>
+            {
+                if (XamlRoot != null) XamlRoot.Changed += Root_Changed;
+                if (_isFitToWidth) ApplyFitToWidth();
+                ScheduleRender();
+            };
+            Unloaded += (_, _) =>
+            {
+                if (XamlRoot != null) XamlRoot.Changed -= Root_Changed;
+                _renderTimer?.Stop();
+            };
             
             _penButtons = new List<ToggleButton> { BtnPen0, BtnPen1, BtnPen2, BtnPen3, BtnPen4 };
             _highlighterButtons = new List<ToggleButton> { BtnHighlighter0, BtnHighlighter1, BtnHighlighter2 };
@@ -240,12 +251,12 @@ namespace PDFaNoter
                     pageData.Words = wordsList;
                 }
                 var pageView = new PdfPageView();
-                pageView.LoadPage(pageData, History);
+                await pageView.LoadPageAsync(pageData, History);
                 _pages.Add(pageView);
-                await Task.Delay(10);
+
             }
             
-            await Task.Delay(100);
+            PdfPagesControl.UpdateLayout();
             BtnFitWidth_Click(null, null);
             UpdateCurrentPageNumber(false);
         }
@@ -710,6 +721,7 @@ namespace PDFaNoter
                 }
             }
 
+            _isFitToWidth = true;
             ApplyFitToWidth();
         }
 
@@ -892,10 +904,45 @@ namespace PDFaNoter
             }
         }
 
-                private void PdfScrollViewer_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)
+        private void Root_Changed(XamlRoot sender, XamlRootChangedEventArgs args) => ScheduleRender();
+
+        private DispatcherTimer? _renderTimer;
+        private float _previousZoom = 1.0f;
+
+        private void ScheduleRender()
         {
+            if (_renderTimer == null)
+            {
+                _renderTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+                _renderTimer.Tick += (_, _) =>
+                {
+                    _renderTimer.Stop();
+                    foreach (var page in _pages)
+                    {
+                        if (page.ActualWidth <= 0 || page.BaseWidth <= 0) continue;
+                        var bounds = page.TransformToVisual(PdfScrollViewer).TransformBounds(
+                            new Windows.Foundation.Rect(0, 0, page.ActualWidth, page.ActualHeight));
+                        bool visible = bounds.Bottom > -200 && bounds.Top < PdfScrollViewer.ActualHeight + 200 &&
+                                       bounds.Right > -200 && bounds.Left < PdfScrollViewer.ActualWidth + 200;
+                        double scale = visible
+                            ? page.ActualWidth / page.BaseWidth * PdfScrollViewer.ZoomFactor * (XamlRoot?.RasterizationScale ?? 1.0)
+                            : Math.Min(1.0, 800.0 / page.BaseWidth);
+                        _ = page.UpdateRenderResolutionAsync((float)scale);
+                    }
+                };
+            }
+            _renderTimer.Stop();
+            _renderTimer.Start();
+        }
+
+        private void PdfScrollViewer_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)
+        {
+            if (Math.Abs(_previousZoom - PdfScrollViewer.ZoomFactor) > 0.001f)
+                _isFitToWidth = false;
+            _previousZoom = PdfScrollViewer.ZoomFactor;
             UpdateContainerSize();
             UpdateCurrentPageNumber();
+            ScheduleRender();
         }
 
         private void UpdateCurrentPageNumber(bool showToast = true)
@@ -1082,7 +1129,7 @@ namespace PDFaNoter
             return smoothedPoints;
         }
         private bool _isFitToWidth = true;
-        private double _currentPageWidth = 0;
+
 
         // Panning state
         private bool _isPanning = false;
@@ -1119,6 +1166,7 @@ namespace PDFaNoter
             
             if (Math.Abs(PdfScrollViewer.ZoomFactor - 1.0f) > 0.01f)
             {
+                _previousZoom = 1.0f;
                 PdfScrollViewer.ChangeView(0, null, 1.0f, true);
             }
 
@@ -1142,12 +1190,13 @@ namespace PDFaNoter
             else
             {
                 double targetW = Math.Max(200, viewW - 24);
-                _currentPageWidth = targetW;
+
                 foreach (var page in _pages)
                 {
                     page.SetDisplayWidth(targetW);
                 }
             }
+            ScheduleRender();
         }
 
         
@@ -1155,16 +1204,15 @@ namespace PDFaNoter
         {
             if (PdfPagesContainer != null && PdfScrollViewer.ViewportWidth > 0 && PdfScrollViewer.ViewportHeight > 0)
             {
-                double zoom = PdfScrollViewer.ZoomFactor;
-                if (zoom <= 0) zoom = 1.0;
-                PdfPagesContainer.MinWidth = PdfScrollViewer.ViewportWidth / zoom;
-                PdfPagesContainer.MinHeight = PdfScrollViewer.ViewportHeight / zoom;
+                PdfPagesContainer.MinWidth = PdfScrollViewer.ViewportWidth;
+                PdfPagesContainer.MinHeight = PdfScrollViewer.ViewportHeight;
             }
         }
 
                 private void PdfScrollViewer_SizeChanged(object sender, SizeChangedEventArgs e)
         {
             UpdateContainerSize();
+            ScheduleRender();
             if (_isFitToWidth && e.NewSize.Width > 0)
             {
                 ApplyFitToWidth();
@@ -1174,71 +1222,20 @@ namespace PDFaNoter
         private void PdfScrollViewer_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
         {
             var keyState = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control);
-            bool isCtrl = (keyState & Windows.UI.Core.CoreVirtualKeyStates.Down) == Windows.UI.Core.CoreVirtualKeyStates.Down;
-            if (isCtrl)
-            {
-                var pt = e.GetCurrentPoint(PdfScrollViewer);
-                int delta = pt.Properties.MouseWheelDelta;
-                if (delta != 0)
-                {
-                    _isFitToWidth = false;
-
-                    // If ZoomFactor was modified by pinch gesture on Surface, fold it into _currentPageWidth and reset ZoomFactor
-                    if (Math.Abs(PdfScrollViewer.ZoomFactor - 1.0f) > 0.01f)
-                    {
-                        if (_currentPageWidth <= 0 && _pages.Count > 0) _currentPageWidth = _pages[0].Width;
-                        _currentPageWidth *= PdfScrollViewer.ZoomFactor;
-                        PdfScrollViewer.ChangeView(null, null, 1.0f, true);
-                    }
-
-                    double factor = (delta > 0) ? 1.15 : 0.87;
-                    double currentW = _currentPageWidth;
-                    if (currentW <= 0 && _pages.Count > 0) currentW = _pages[0].Width;
-                    if (currentW <= 0) currentW = 1000;
-
-                    double newW = Math.Clamp(currentW * factor, 250, 10000);
-                    factor = newW / currentW;
-
-                    double cursorX = pt.Position.X;
-                    double cursorY = pt.Position.Y;
-
-                    double targetOffsetX = 0;
-                    double targetOffsetY = 0;
-
-                    try
-                    {
-                        var transform = PdfPagesControl.TransformToVisual(PdfScrollViewer);
-                        var contentOrigin = transform.TransformPoint(new Windows.Foundation.Point(0, 0));
-
-                        double relX = cursorX - contentOrigin.X;
-                        double relY = cursorY - contentOrigin.Y;
-
-                        targetOffsetX = Math.Max(0, relX * factor - cursorX);
-                        targetOffsetY = Math.Max(0, relY * factor - cursorY);
-                    }
-                    catch
-                    {
-                        targetOffsetX = Math.Max(0, (PdfScrollViewer.HorizontalOffset + cursorX) * factor - cursorX);
-                        targetOffsetY = Math.Max(0, (PdfScrollViewer.VerticalOffset + cursorY) * factor - cursorY);
-                    }
-
-                    _currentPageWidth = newW;
-                    foreach (var page in _pages)
-                    {
-                        page.SetDisplayWidth(newW);
-                    }
-
-                    PdfPagesControl.UpdateLayout();
-                    PdfScrollViewer.ChangeView(targetOffsetX, targetOffsetY, 1.0f, true);
-
-                    DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Normal, () =>
-                    {
-                        PdfScrollViewer.ChangeView(targetOffsetX, targetOffsetY, 1.0f, true);
-                    });
-
-                    e.Handled = true;
-                }
-            }
+            if ((keyState & Windows.UI.Core.CoreVirtualKeyStates.Down) == 0) return;
+            var pt = e.GetCurrentPoint(PdfScrollViewer);
+            int delta = pt.Properties.MouseWheelDelta;
+            if (delta == 0) return;
+            e.Handled = true;
+            _isFitToWidth = false;
+            // Use the same transform as touch pinch, anchored at the mouse pointer.
+            double oldZoom = PdfScrollViewer.ZoomFactor;
+            float newZoom = (float)Math.Clamp(oldZoom * Math.Pow(1.15, delta / 120.0),
+                PdfScrollViewer.MinZoomFactor, PdfScrollViewer.MaxZoomFactor);
+            double ratio = newZoom / oldZoom;
+            double x = (PdfScrollViewer.HorizontalOffset + pt.Position.X) * ratio - pt.Position.X;
+            double y = (PdfScrollViewer.VerticalOffset + pt.Position.Y) * ratio - pt.Position.Y;
+            PdfScrollViewer.ChangeView(Math.Max(0, x), Math.Max(0, y), newZoom, true);
         }
 
         private void PdfScrollViewer_PointerPressed(object sender, PointerRoutedEventArgs e)

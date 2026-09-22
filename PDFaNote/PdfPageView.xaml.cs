@@ -75,7 +75,47 @@ namespace PDFaNoter
 
         
 
-        public async void LoadPage(PdfPageData data, CommandHistory history)
+        private static readonly System.Threading.SemaphoreSlim _renderLock = new(2, 2);
+        private int _renderVersion;
+        private uint _renderedWidth;
+
+        public async System.Threading.Tasks.Task UpdateRenderResolutionAsync(float zoomFactor)
+        {
+            if (_pageData?.Document == null || BaseWidth <= 0 || BaseHeight <= 0 ||
+                !float.IsFinite(zoomFactor) || zoomFactor <= 0) return;
+            // Bound bitmap memory while preserving the page aspect ratio.
+            double scale = Math.Min(zoomFactor, Math.Min(8192.0 / Math.Max(BaseWidth, BaseHeight),
+                Math.Sqrt(16000000.0 / (BaseWidth * BaseHeight))));
+            uint width = (uint)Math.Max(1, Math.Ceiling(BaseWidth * scale));
+            uint height = (uint)Math.Max(1, Math.Ceiling(BaseHeight * scale));
+            int version = ++_renderVersion;
+            await _renderLock.WaitAsync();
+            try
+            {
+                if (version != _renderVersion || width == _renderedWidth) return;
+                using var pdfPage = _pageData.Document.GetPage(_pageData.PageIndex);
+                using var stream = new InMemoryRandomAccessStream();
+                await pdfPage.RenderToStreamAsync(stream, new PdfPageRenderOptions
+                {
+                    DestinationWidth = width,
+                    DestinationHeight = height
+                });
+                if (version != _renderVersion) return;
+                var bitmap = new BitmapImage();
+                stream.Seek(0);
+                await bitmap.SetSourceAsync(stream);
+                if (version != _renderVersion) return;
+                PdfImage.Source = bitmap;
+                _renderedWidth = width;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"PDF render failed: {ex}");
+            }
+            finally { _renderLock.Release(); }
+        }
+
+        public async System.Threading.Tasks.Task LoadPageAsync(PdfPageData data, CommandHistory history)
         {
             _pageData = data;
             _history = history;
@@ -171,24 +211,15 @@ namespace PDFaNoter
                 BaseWidth = pdfPage.Size.Width * 2;
                 BaseHeight = pdfPage.Size.Height * 2;
 
-                using (var stream = new InMemoryRandomAccessStream())
-                {
-                    var renderOptions = new PdfPageRenderOptions();
-                    renderOptions.DestinationWidth = (uint)BaseWidth;
-                    renderOptions.DestinationHeight = (uint)BaseHeight;
-                    
-                    await pdfPage.RenderToStreamAsync(stream, renderOptions);
-                    var bitmap = new BitmapImage();
-                    await bitmap.SetSourceAsync(stream);
-                    PdfImage.Source = bitmap;
-                    
-                    InkCanvas.Width = BaseWidth;
-                    InkCanvas.Height = BaseHeight;
-                    PdfImage.Width = BaseWidth;
-                    PdfImage.Height = BaseHeight;
-                    PageContainer.Width = BaseWidth;
-                    PageContainer.Height = BaseHeight;
-                }
+                _renderedWidth = 0;
+                await UpdateRenderResolutionAsync((float)Math.Min(1.0, 800.0 / BaseWidth));
+
+                InkCanvas.Width = BaseWidth;
+                InkCanvas.Height = BaseHeight;
+                PdfImage.Width = BaseWidth;
+                PdfImage.Height = BaseHeight;
+                PageContainer.Width = BaseWidth;
+                PageContainer.Height = BaseHeight;
 
                 if (_currentDisplayWidth > 0)
                 {
